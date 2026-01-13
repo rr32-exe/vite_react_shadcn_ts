@@ -24,5 +24,7 @@ Quick steps to go live:
 4. Preview locally: `wrangler dev`
 5. Publish: `npm run deploy:workers` (or `wrangler publish --account-id <ACCOUNT_ID>`)
 
+You can run the interactive installer to set all secrets and optionally publish: `npm run setup:workers`.
+
 See `workers/README.md` for more details on testing webhooks and CI deployment.
 

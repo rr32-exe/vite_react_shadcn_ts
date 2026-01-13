@@ -23,3 +23,22 @@ workers_dev = true
 [vars]
 # SUPABASE_URL = "https://xyz.supabase.co"  # prefer to set in Cloudflare dashboard or via wrangler env
 # MONITORING_WEBHOOK_URL = "https://hooks.example.com/your-monitor"
+# Optional Sentry DSN for server-side error reporting
+# SENTRY_DSN = "https://<public_key>@sentry.io/<project_id>"
+# Optional client-side Sentry DSN for frontend (VITE_SENTRY_DSN can be set in your build environment)
+# VITE_SENTRY_DSN = "https://<public_key>@sentry.io/<project_id>"
+# Rate limiting config (per-IP)
+# RATE_LIMIT_MAX = "60"          # max requests
+# RATE_LIMIT_WINDOW = "60"       # window seconds
+# Optional OAuth/GitHub settings (register an OAuth App and set the callback to https://<your-host>/api/auth/github/callback)
+# GITHUB_CLIENT_ID = ""
+# GITHUB_CLIENT_SECRET = ""
+# ADMIN_GITHUB_USERS = "ghuser1,ghuser2"
+# JWT settings for Admin UI
+# ADMIN_USERNAME = "admin"
+# ADMIN_PASSWORD = "strongpassword"
+# ADMIN_JWT_SECRET = "supersecret"
+# ADMIN_JWT_EXPIRES = "86400"
+# Optional env name for Sentry
+# WORKER_ENV = "production"
+# SENTRY_RELEASE = ""

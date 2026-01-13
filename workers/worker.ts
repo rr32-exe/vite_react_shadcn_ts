@@ -19,6 +19,33 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
 };
 
+// Basic in-memory rate limiter map. Note: this is instance-local and not globally consistent.
+const RATE_MAP: Map<string, { count: number; resetAt: number }> = new Map();
+
+function getClientIP(request: Request) {
+  return request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
+}
+
+function getRateLimitHeaders(key: string, max: number, windowSec: number) {
+  const now = Date.now();
+  const state = RATE_MAP.get(key) || { count: 0, resetAt: now + windowSec * 1000 };
+  const remaining = Math.max(0, max - state.count);
+  const retryAfter = Math.ceil(Math.max(0, (state.resetAt - now) / 1000));
+  return { remaining, resetAt: state.resetAt, retryAfter };
+}
+
+function incrementRate(key: string, max: number, windowSec: number) {
+  const now = Date.now();
+  const state = RATE_MAP.get(key);
+  if (!state || state.resetAt < now) {
+    RATE_MAP.set(key, { count: 1, resetAt: now + windowSec * 1000 });
+    return { count: 1, resetAt: now + windowSec * 1000 };
+  }
+  state.count += 1;
+  return state;
+}
+
+
 function jsonResponse(obj: any, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
@@ -35,6 +62,20 @@ export default {
     }
 
     try {
+      // Apply rate limit to public endpoints
+      const publicPaths = ['/api/create-checkout', '/api/contact-submit', '/api/newsletter-subscribe'];
+      if (publicPaths.includes(url.pathname) && request.method === 'POST') {
+        const ip = getClientIP(request);
+        const max = Number(env.RATE_LIMIT_MAX || 60);
+        const windowSec = Number(env.RATE_LIMIT_WINDOW || 60);
+        const key = `${ip}:${url.pathname}`;
+        const state = incrementRate(key, max, windowSec);
+        if (state.count > max) {
+          const headers = { 'Retry-After': String(Math.ceil((state.resetAt - Date.now()) / 1000)), ...CORS_HEADERS };
+          return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), { status: 429, headers: { 'Content-Type': 'application/json', ...headers } });
+        }
+      }
+
       if (url.pathname === '/api/create-checkout' && request.method === 'POST') {
         return handleCreateCheckout(request, env);
       }
@@ -51,6 +92,18 @@ export default {
         return handleStripeWebhook(request, env);
       }
 
+      if (url.pathname === '/api/admin/login' && request.method === 'POST') {
+        return handleAdminLogin(request, env);
+      }
+
+      if (url.pathname === '/api/auth/github/start' && request.method === 'GET') {
+        return handleGithubStart(request, env);
+      }
+
+      if (url.pathname === '/api/auth/github/callback' && request.method === 'GET') {
+        return handleGithubCallback(request, env);
+      }
+
       if (url.pathname.startsWith('/api/admin') && request.method === 'GET') {
         return handleAdminRequest(request, env);
       }
@@ -58,6 +111,7 @@ export default {
       return new Response('Not Found', { status: 404 });
     } catch (err: any) {
       console.error('Uncaught error:', err);
+      try { await sendToSentry(err, env); } catch(e) { console.error('Sentry send failed', e); }
       return jsonResponse({ error: err?.message || 'Internal server error' }, 500);
     }
   }
@@ -297,15 +351,128 @@ async function sendMonitoringAlert(env: any, payload: any) {
   }
 }
 
+/* --- Sentry (lightweight) --- */
+
+function parseDsn(dsn: string) {
+  // DSN format: https://public_key@o0.ingest.sentry.io/project_id
+  try {
+    const u = new URL(dsn);
+    const path = u.pathname.replace(/^\//, '');
+    const projectId = path.split('/').pop();
+    const publicKey = u.username || (u.href.match(/https:\/\/([^@]+)@/) || [])[1];
+    return { host: u.origin, projectId, publicKey };
+  } catch (err) {
+    return null;
+  }
+}
+
+async function sendToSentry(err: any, env: any) {
+  const dsn = env.SENTRY_DSN || env.SENTRY_DSN_PUBLIC || null;
+  if (!dsn) return;
+  const parsed = parseDsn(dsn);
+  if (!parsed || !parsed.projectId) return;
+  const url = `${parsed.host}/api/${parsed.projectId}/store/`;
+  const event = {
+    event_id: (Math.random() + 1).toString(36).substring(2, 12),
+    message: String(err?.message || err),
+    platform: 'javascript',
+    logger: 'worker',
+    exception: [{ value: String(err?.stack || err), type: err?.name || 'Error' }],
+    level: 'error',
+    timestamp: new Date().toISOString(),
+    extra: { worker_env: 'cloudflare' }
+  };
+  // Add release and environment tags if present
+  if (env.SENTRY_RELEASE) {
+    event.extra.release = env.SENTRY_RELEASE;
+  }
+  if (env.WORKER_ENV) {
+    event.extra.worker_env_name = env.WORKER_ENV;
+  }
+
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Sentry-Auth': `Sentry sentry_version=7, sentry_key=${parsed.publicKey}`
+      },
+      body: JSON.stringify(event)
+    });
+  } catch (e) {
+    console.error('Failed to send to Sentry', e);
+  }
+}
+
+/* --- JWT-based admin auth helpers --- */
+
+function base64UrlEncode(bytes: Uint8Array) {
+  let binary = '';
+  bytes.forEach((b) => binary += String.fromCharCode(b));
+  const b64 = btoa(binary);
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64UrlEncodeStr(str: string) {
+  const enc = new TextEncoder().encode(str);
+  return base64UrlEncode(enc as Uint8Array);
+}
+
+async function hmacSha256Base64Url(secret: string, data: string) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+  return base64UrlEncode(new Uint8Array(sig));
+}
+
+async function signJwt(payload: any, secret: string, expiresInSec = 86400) {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const now = Math.floor(Date.now() / 1000);
+  payload.iat = now;
+  payload.exp = now + expiresInSec;
+  const toSign = `${base64UrlEncodeStr(JSON.stringify(header))}.${base64UrlEncodeStr(JSON.stringify(payload))}`;
+  const signature = await hmacSha256Base64Url(secret, toSign);
+  return `${toSign}.${signature}`;
+}
+
+async function verifyJwt(token: string, secret: string) {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const [headerB64, payloadB64, sig] = parts;
+    const data = `${headerB64}.${payloadB64}`;
+    const expected = await hmacSha256Base64Url(secret, data);
+    if (!secureCompare(expected, sig)) return null;
+    const payloadJson = atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/'));
+    const payload = JSON.parse(payloadJson);
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp && now > payload.exp) return null;
+    return payload;
+  } catch (err) {
+    return null;
+  }
+}
+
+
 /* --- Admin endpoints (read-only) --- */
 
 async function handleAdminRequest(request: Request, env: any) {
-  const adminSecret = env.ADMIN_SECRET;
+  // Prefer JWT-based auth; fall back to legacy ADMIN_SECRET only if set (deprecated)
+  const adminJwtSecret = env.ADMIN_JWT_SECRET;
+  const adminSecret = env.ADMIN_SECRET; // legacy
   const authHeader = request.headers.get('authorization') || '';
-  const headerSecret = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : request.headers.get('x-admin-secret') || '';
-  if (!adminSecret || headerSecret !== adminSecret) {
-    return new Response('Unauthorized', { status: 401 });
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+
+  let authorized = false;
+  if (token && adminJwtSecret) {
+    const payload = await verifyJwt(token, adminJwtSecret);
+    if (payload && payload.role === 'admin') authorized = true;
   }
+  // legacy secret check
+  if (!authorized && adminSecret) {
+    const headerSecret = request.headers.get('x-admin-secret') || '';
+    if (headerSecret === adminSecret) authorized = true;
+  }
+  if (!authorized) return new Response('Unauthorized', { status: 401 });
 
   const url = new URL(request.url);
   const path = url.pathname.replace('/api/admin', ''); // /orders or /payments
@@ -320,13 +487,20 @@ async function handleAdminRequest(request: Request, env: any) {
   const limit = Math.min(Number(query.get('limit') || '100'), 1000);
 
   try {
-    if (path === '/orders' || path === '/orders/') {
+    if (path === '/orders.csv' || path === '/orders') {
       let endpoint = `${supabaseUrl}/rest/v1/orders?select=*&limit=${limit}&order=created_at.desc`;
       if (id) endpoint = `${supabaseUrl}/rest/v1/orders?id=eq.${encodeURIComponent(id)}`;
       else if (email) endpoint = `${supabaseUrl}/rest/v1/orders?customer_email=eq.${encodeURIComponent(email)}&limit=${limit}`;
 
       const resp = await fetch(endpoint, { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } });
-      const rows = resp.ok ? await resp.json() : { error: await resp.text() };
+      if (!resp.ok) return jsonResponse({ error: await resp.text() }, 500);
+      const rows = await resp.json();
+      if (path === '/orders.csv') {
+        // Return CSV
+        const header = ['id','customer_name','customer_email','service_id','service_name','total_amount','deposit_amount','currency','status','stripe_session_id','created_at'];
+        const csv = [header.join(',')].concat(rows.map((r: any) => header.map(h => `"${String(r[h] ?? '')}"`).join(','))).join('\n');
+        return new Response(csv, { headers: { 'Content-Type': 'text/csv', ...CORS_HEADERS } });
+      }
       return jsonResponse({ success: true, data: rows });
     }
 
@@ -346,6 +520,65 @@ async function handleAdminRequest(request: Request, env: any) {
     await sendMonitoringAlert(env, { level: 'error', action: 'admin', error: String(err) });
     return jsonResponse({ error: 'Internal error' }, 500);
   }
+}
+
+/* --- Admin Login & OAuth --- */
+
+async function handleAdminLogin(request: Request, env: any) {
+  const { username, password } = await request.json();
+  const adminUser = env.ADMIN_USERNAME;
+  const adminPass = env.ADMIN_PASSWORD;
+  const jwtSecret = env.ADMIN_JWT_SECRET;
+  const jwtExpiry = Number(env.ADMIN_JWT_EXPIRES || '86400');
+  if (!adminUser || !adminPass || !jwtSecret) return jsonResponse({ error: 'Admin login not configured' }, 500);
+  if (username !== adminUser || password !== adminPass) return jsonResponse({ error: 'Invalid credentials' }, 401);
+  const token = await signJwt({ role: 'admin', username }, jwtSecret, jwtExpiry);
+  return jsonResponse({ token, expiresIn: jwtExpiry });
+}
+
+async function handleGithubStart(request: Request, env: any) {
+  const clientId = env.GITHUB_CLIENT_ID;
+  const redirectUri = `${request.headers.get('origin')}/api/auth/github/callback`;
+  const state = Math.random().toString(36).substring(2);
+  // store state in memory (for demo purposes; in production use KV)
+  // attach state to redirect
+  const url = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}&scope=read:user`;
+  return Response.redirect(url, 302);
+}
+
+async function handleGithubCallback(request: Request, env: any) {
+  const url = new URL(request.url);
+  const code = url.searchParams.get('code');
+  const state = url.searchParams.get('state');
+  const clientId = env.GITHUB_CLIENT_ID;
+  const clientSecret = env.GITHUB_CLIENT_SECRET;
+  if (!code || !clientId || !clientSecret) return new Response('Bad Request', { status: 400 });
+
+  // Exchange code for token
+  const tokenResp = await fetch('https://github.com/login/oauth/access_token', {
+    method: 'POST',
+    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code })
+  });
+  const tokenJson = await tokenResp.json();
+  const accessToken = tokenJson.access_token;
+  if (!accessToken) return new Response('GitHub auth failed', { status: 400 });
+
+  // Fetch user
+  const userResp = await fetch('https://api.github.com/user', { headers: { Authorization: `token ${accessToken}`, 'User-Agent': 'worker' } });
+  const userJson = await userResp.json();
+  const login = userJson.login;
+
+  // optional allowlist
+  const allowUsers = (env.ADMIN_GITHUB_USERS || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (allowUsers.length > 0 && !allowUsers.includes(login)) return new Response('Unauthorized', { status: 401 });
+
+  // issue JWT and redirect back to admin UI
+  const jwtSecret = env.ADMIN_JWT_SECRET;
+  const jwtExpiry = Number(env.ADMIN_JWT_EXPIRES || '86400');
+  const token = await signJwt({ role: 'admin', username: login, provider: 'github' }, jwtSecret, jwtExpiry);
+  const redirectTo = `${request.headers.get('origin')}/admin?token=${encodeURIComponent(token)}`;
+  return Response.redirect(redirectTo, 302);
 }
 
 /* --- Stripe Webhook handling --- */
@@ -404,6 +637,7 @@ async function handleStripeWebhook(request: Request, env: any) {
   const ok = await verifyStripeSignature(payload, sigHeader, webhookSecret, 300);
   if (!ok) {
     console.error('Invalid stripe webhook signature');
+    await sendMonitoringAlert(env, { level: 'warn', action: 'webhook_invalid_signature', ip: getClientIP(request) });
     return new Response(JSON.stringify({ error: 'Invalid signature' }), { status: 400, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
   }
 
@@ -412,6 +646,7 @@ async function handleStripeWebhook(request: Request, env: any) {
     event = JSON.parse(payload);
   } catch (err) {
     console.error('Invalid JSON payload', err);
+    await sendMonitoringAlert(env, { level: 'error', action: 'webhook_invalid_json', error: String(err) });
     return new Response(JSON.stringify({ error: 'Invalid payload' }), { status: 400, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
   }
 

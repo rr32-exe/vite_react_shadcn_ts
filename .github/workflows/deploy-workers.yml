@@ -42,6 +42,20 @@ jobs:
           # Assumes account ID is provided as secret. This publishes to workers.dev.
           wrangler publish --account-id ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      - name: Create Sentry release (optional)
+        if: env.SENTRY_AUTH_TOKEN != ''
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          SENTRY_RELEASE: ${{ github.sha }}
+        run: |
+          # Use sentry-cli to create a release and associate commits
+          npm i -g @sentry/cli
+          sentry-cli releases new $SENTRY_RELEASE -o $SENTRY_ORG -p $SENTRY_PROJECT
+          sentry-cli releases set-commits --auto $SENTRY_RELEASE
+          sentry-cli releases finalize $SENTRY_RELEASE
+
 # Notes:
 # - Store CF_API_TOKEN and CLOUDFLARE_ACCOUNT_ID as repository secrets.
 # - Do NOT store service role keys in repository secrets unless you understand the security implications.
