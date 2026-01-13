@@ -1,0 +1,36 @@
+name: Deploy Cloudflare Worker
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  publish:
+    name: Publish Worker
+    runs-on: ubuntu-latest
+    env:
+      # Ensure you set these GitHub secrets in repo settings
+      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install wrangler
+        run: npm install -g wrangler
+
+      - name: Publish Worker
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          # Assumes account ID is provided as secret. This publishes to workers.dev.
+          wrangler publish --account-id ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+# Notes:
+# - Store CF_API_TOKEN and CLOUDFLARE_ACCOUNT_ID as repository secrets.
+# - Do NOT store service role keys in repository secrets unless you understand the security implications.

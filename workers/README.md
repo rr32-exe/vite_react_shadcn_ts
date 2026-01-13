@@ -72,10 +72,32 @@ curl -X POST "https://<your-subdomain>.workers.dev/api/newsletter-subscribe" \
 - For `newsletter_subscribe` we use `on_conflict=email,site` to emulate upsert behavior.
 - If you prefer the official Stripe SDK for Edge, you can swap the REST call for the SDK (note: some Stripe SDKs depend on Node APIs and may need bundling).
 
+### Stripe Webhooks
+
+This Worker now includes a `/api/stripe-webhook` POST endpoint that verifies Stripe webhook signatures using a webhook secret and records payments in the `payments` table and marks `orders` as `paid` on successful events.
+
+- Add the webhook secret: `wrangler secret put STRIPE_WEBHOOK_SECRET`
+- Configure Stripe to send webhooks to `https://<your-subdomain>.workers.dev/api/stripe-webhook`
+- For local testing, use the Stripe CLI:
+
+  stripe listen --forward-to https://<your-subdomain>.workers.dev/api/stripe-webhook
+
+  Or trigger a test event:
+
+  stripe trigger checkout.session.completed
+
+### CI / Deploy
+
+A GitHub Actions workflow has been added at `.github/workflows/deploy-workers.yml` that publishes the worker on push to `main`. Set these GitHub secrets:
+- `CF_API_TOKEN` — Cloudflare API token with workers write privileges
+- `CLOUDFLARE_ACCOUNT_ID` — your account id
+
+---
+
 If you want, I can also:
 - Add TypeScript types or unit tests,
-- Add a preview/dev script (wrangler dev) to test locally,
-- Add rate-limiting or webhook verification for completed payments.
+- Add rate-limiting or monitoring (Sentry / Logs),
+- Add automatic secret provisioning (careful with security) or a safer managed deploy.
 
 ---
 

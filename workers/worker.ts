@@ -47,6 +47,10 @@ export default {
         return handleNewsletterSubscribe(request, env);
       }
 
+      if (url.pathname === '/api/stripe-webhook' && request.method === 'POST') {
+        return handleStripeWebhook(request, env);
+      }
+
       return new Response('Not Found', { status: 404 });
     } catch (err: any) {
       console.error('Uncaught error:', err);
@@ -255,4 +259,217 @@ async function handleNewsletterSubscribe(request: Request, env: any) {
 
   const data = (await resp.json())[0];
   return jsonResponse({ success: true, message: 'Successfully subscribed!', data });
+}
+
+/* --- Stripe Webhook handling --- */
+
+async function hmacSHA256Hex(secret: string, message: string) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message));
+  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function secureCompare(a: string, b: string) {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
+
+async function verifyStripeSignature(payload: string, sigHeader: string, secret: string, toleranceSec = 300) {
+  if (!sigHeader || !secret) return false;
+  const parts = sigHeader.split(',').map(s => s.split('='));
+  const map: Record<string, string[]> = {};
+  for (const [k, v] of parts) {
+    if (!map[k]) map[k] = [];
+    map[k].push(v);
+  }
+  const ts = map['t'] ? Number(map['t'][0]) : null;
+  const v1s = map['v1'] || [];
+  if (!ts || v1s.length === 0) return false;
+  const now = Math.floor(Date.now() / 1000);
+  if (Math.abs(now - ts) > toleranceSec) return false;
+  const signedPayload = `${ts}.${payload}`;
+  const expected = await hmacSHA256Hex(secret, signedPayload);
+  for (const s of v1s) {
+    if (secureCompare(expected, s)) return true;
+  }
+  return false;
+}
+
+async function handleStripeWebhook(request: Request, env: any) {
+  const webhookSecret = env.STRIPE_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    console.error('Stripe webhook secret not configured');
+    return new Response(JSON.stringify({ error: 'Stripe webhook secret not configured' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+  }
+
+  const payload = await request.text();
+  const sigHeader = request.headers.get('stripe-signature') || '';
+  const ok = await verifyStripeSignature(payload, sigHeader, webhookSecret, 300);
+  if (!ok) {
+    console.error('Invalid stripe webhook signature');
+    return new Response(JSON.stringify({ error: 'Invalid signature' }), { status: 400, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+  }
+
+  let event: any;
+  try {
+    event = JSON.parse(payload);
+  } catch (err) {
+    console.error('Invalid JSON payload', err);
+    return new Response(JSON.stringify({ error: 'Invalid payload' }), { status: 400, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+  }
+
+  const supabaseUrl = env.SUPABASE_URL;
+  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Supabase not configured (webhook)');
+    return new Response(JSON.stringify({ error: 'Supabase not configured' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+  }
+
+  try {
+    const type = event.type;
+
+    if (type === 'checkout.session.completed') {
+      const session = event.data.object;
+      const sessionId = session.id;
+      const orderId = session.metadata?.order_id ? Number(session.metadata.order_id) : null;
+      const paymentIntent = session.payment_intent || null;
+      const amount = session.amount_total || session.amount_subtotal || 0;
+      const currency = session.currency || null;
+
+      // Idempotency check: does a payment with this payment_intent already exist?
+      if (paymentIntent) {
+        const existsResp = await fetch(`${supabaseUrl}/rest/v1/payments?stripe_payment_intent=eq.${encodeURIComponent(paymentIntent)}`, {
+          headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }
+        });
+        if (existsResp.ok) {
+          const rows = await existsResp.json();
+          if (rows && rows.length > 0) {
+            console.log('Payment already recorded for', paymentIntent);
+            // still ensure order status set to paid
+            if (orderId) {
+              await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${orderId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+                body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() })
+              });
+            } else if (sessionId) {
+              await fetch(`${supabaseUrl}/rest/v1/orders?stripe_session_id=eq.${encodeURIComponent(sessionId)}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+                body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() })
+              });
+            }
+            return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+          }
+        }
+      }
+
+      // Insert payment record
+      try {
+        const paymentInsertResp = await fetch(`${supabaseUrl}/rest/v1/payments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Prefer: 'return=representation' },
+          body: JSON.stringify([{
+            order_id: orderId,
+            stripe_payment_intent: paymentIntent,
+            stripe_session_id: sessionId,
+            amount: amount,
+            currency: currency,
+            status: 'succeeded',
+            raw: event
+          }])
+        });
+        if (!paymentInsertResp.ok) {
+          const errText = await paymentInsertResp.text();
+          console.error('Failed to insert payment:', errText);
+        }
+      } catch (err) {
+        console.error('Error inserting payment:', err);
+      }
+
+      // Update order status
+      if (orderId) {
+        await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${orderId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+          body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() })
+        });
+      } else if (sessionId) {
+        await fetch(`${supabaseUrl}/rest/v1/orders?stripe_session_id=eq.${encodeURIComponent(sessionId)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+          body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() })
+        });
+      }
+
+      return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+    }
+
+    if (type === 'payment_intent.succeeded') {
+      const pi = event.data.object;
+      const paymentIntent = pi.id;
+      const amount = pi.amount || 0;
+      const currency = pi.currency || null;
+      const orderId = pi.metadata?.order_id ? Number(pi.metadata.order_id) : null;
+      const sessionId = pi.metadata?.session_id || null;
+
+      // idempotency
+      const existsResp = await fetch(`${supabaseUrl}/rest/v1/payments?stripe_payment_intent=eq.${encodeURIComponent(paymentIntent)}`, {
+        headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }
+      });
+      if (existsResp.ok) {
+        const rows = await existsResp.json();
+        if (rows && rows.length > 0) {
+          console.log('Payment already recorded for PI', paymentIntent);
+          return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+        }
+      }
+
+      await fetch(`${supabaseUrl}/rest/v1/payments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Prefer: 'return=representation' },
+        body: JSON.stringify([{
+          order_id: orderId,
+          stripe_payment_intent: paymentIntent,
+          stripe_session_id: sessionId,
+          amount: amount,
+          currency: currency,
+          status: 'succeeded',
+          raw: event
+        }])
+      });
+
+      if (orderId) {
+        await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${orderId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+          body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() })
+        });
+      } else if (sessionId) {
+        await fetch(`${supabaseUrl}/rest/v1/orders?stripe_session_id=eq.${encodeURIComponent(sessionId)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+          body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() })
+        });
+      }
+
+      return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+    }
+
+    // For other events, acknowledge
+    return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+  } catch (err: any) {
+    console.error('Webhook handling error:', err);
+    return new Response(JSON.stringify({ error: err.message || 'Webhook handling error' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+  }
 }
