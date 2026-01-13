@@ -1,0 +1,19 @@
+name = "services-api"
+main = "workers/worker.ts"
+compatibility_date = "2026-01-13"
+workers_dev = true
+
+# Set your Cloudflare account ID here or add it with `wrangler publish --account-id <id>`
+# account_id = "<YOUR_ACCOUNT_ID>"
+
+# Example of adding a route (if you want to bind worker to a route on your domain):
+# route = "example.com/api/*"
+
+[build]
+  command = ""
+
+# NOTE: We recommend using `wrangler secret put` to set the STRIPE key and SUPABASE keys.
+# For example:
+#   wrangler secret put STRIPE_SECRET_KEY
+#   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+# Also set SUPABASE_URL using `wrangler env` or in the dashboard under "Variables".
