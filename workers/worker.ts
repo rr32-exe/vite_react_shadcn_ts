@@ -51,6 +51,10 @@ export default {
         return handleStripeWebhook(request, env);
       }
 
+      if (url.pathname.startsWith('/api/admin') && request.method === 'GET') {
+        return handleAdminRequest(request, env);
+      }
+
       return new Response('Not Found', { status: 404 });
     } catch (err: any) {
       console.error('Uncaught error:', err);
@@ -261,6 +265,89 @@ async function handleNewsletterSubscribe(request: Request, env: any) {
   return jsonResponse({ success: true, message: 'Successfully subscribed!', data });
 }
 
+/* --- Utility: retry + monitoring --- */
+
+async function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function retryFetchJson(url: string, options: RequestInit, attempts = 3, backoffMs = 250) {
+  let lastErr: any = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const resp = await fetch(url, options);
+      if (resp.ok) return resp;
+      lastErr = await resp.text();
+      // non-200 response: retry
+    } catch (err) {
+      lastErr = err;
+    }
+    await sleep(backoffMs * Math.pow(2, i));
+  }
+  throw new Error(`Failed after ${attempts} attempts: ${lastErr}`);
+}
+
+async function sendMonitoringAlert(env: any, payload: any) {
+  const url = env.MONITORING_WEBHOOK_URL;
+  if (!url) return;
+  try {
+    await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  } catch (err) {
+    console.error('Failed to post monitoring alert', err);
+  }
+}
+
+/* --- Admin endpoints (read-only) --- */
+
+async function handleAdminRequest(request: Request, env: any) {
+  const adminSecret = env.ADMIN_SECRET;
+  const authHeader = request.headers.get('authorization') || '';
+  const headerSecret = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : request.headers.get('x-admin-secret') || '';
+  if (!adminSecret || headerSecret !== adminSecret) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  const url = new URL(request.url);
+  const path = url.pathname.replace('/api/admin', ''); // /orders or /payments
+  const supabaseUrl = env.SUPABASE_URL;
+  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !supabaseKey) return jsonResponse({ error: 'Supabase not configured' }, 500);
+
+  // parse query params
+  const query = url.searchParams;
+  const id = query.get('id');
+  const email = query.get('email');
+  const limit = Math.min(Number(query.get('limit') || '100'), 1000);
+
+  try {
+    if (path === '/orders' || path === '/orders/') {
+      let endpoint = `${supabaseUrl}/rest/v1/orders?select=*&limit=${limit}&order=created_at.desc`;
+      if (id) endpoint = `${supabaseUrl}/rest/v1/orders?id=eq.${encodeURIComponent(id)}`;
+      else if (email) endpoint = `${supabaseUrl}/rest/v1/orders?customer_email=eq.${encodeURIComponent(email)}&limit=${limit}`;
+
+      const resp = await fetch(endpoint, { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } });
+      const rows = resp.ok ? await resp.json() : { error: await resp.text() };
+      return jsonResponse({ success: true, data: rows });
+    }
+
+    if (path === '/payments' || path === '/payments/') {
+      let endpoint = `${supabaseUrl}/rest/v1/payments?select=*&limit=${limit}&order=created_at.desc`;
+      if (id) endpoint = `${supabaseUrl}/rest/v1/payments?id=eq.${encodeURIComponent(id)}`;
+      else if (query.get('stripe_payment_intent')) endpoint = `${supabaseUrl}/rest/v1/payments?stripe_payment_intent=eq.${encodeURIComponent(query.get('stripe_payment_intent') || '')}`;
+
+      const resp = await fetch(endpoint, { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } });
+      const rows = resp.ok ? await resp.json() : { error: await resp.text() };
+      return jsonResponse({ success: true, data: rows });
+    }
+
+    return jsonResponse({ error: 'Unknown admin path' }, 400);
+  } catch (err: any) {
+    console.error('Admin handler error', err);
+    await sendMonitoringAlert(env, { level: 'error', action: 'admin', error: String(err) });
+    return jsonResponse({ error: 'Internal error' }, 500);
+  }
+}
+
 /* --- Stripe Webhook handling --- */
 
 async function hmacSHA256Hex(secret: string, message: string) {
@@ -374,9 +461,9 @@ async function handleStripeWebhook(request: Request, env: any) {
         }
       }
 
-      // Insert payment record
+      // Insert payment record (with retries)
       try {
-        const paymentInsertResp = await fetch(`${supabaseUrl}/rest/v1/payments`, {
+        const paymentInsertOptions: RequestInit = {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Prefer: 'return=representation' },
           body: JSON.stringify([{
@@ -388,28 +475,32 @@ async function handleStripeWebhook(request: Request, env: any) {
             status: 'succeeded',
             raw: event
           }])
-        });
-        if (!paymentInsertResp.ok) {
-          const errText = await paymentInsertResp.text();
-          console.error('Failed to insert payment:', errText);
+        };
+        try {
+          await retryFetchJson(`${supabaseUrl}/rest/v1/payments`, paymentInsertOptions, 4, 200);
+        } catch (err) {
+          console.error('Failed to insert payment after retries:', err);
+          await sendMonitoringAlert(env, { level: 'error', action: 'insert_payment', error: String(err), event });
         }
       } catch (err) {
         console.error('Error inserting payment:', err);
       }
 
-      // Update order status
-      if (orderId) {
-        await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${orderId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
-          body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() })
-        });
-      } else if (sessionId) {
-        await fetch(`${supabaseUrl}/rest/v1/orders?stripe_session_id=eq.${encodeURIComponent(sessionId)}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
-          body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() })
-        });
+      // Update order status (with retries)
+      const patchOptions: RequestInit = {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+        body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() })
+      };
+      try {
+        if (orderId) {
+          await retryFetchJson(`${supabaseUrl}/rest/v1/orders?id=eq.${orderId}`, patchOptions, 4, 200);
+        } else if (sessionId) {
+          await retryFetchJson(`${supabaseUrl}/rest/v1/orders?stripe_session_id=eq.${encodeURIComponent(sessionId)}`, patchOptions, 4, 200);
+        }
+      } catch (err) {
+        console.error('Failed to update order status after retries:', err);
+        await sendMonitoringAlert(env, { level: 'error', action: 'update_order', error: String(err), sessionId, orderId });
       }
 
       return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });

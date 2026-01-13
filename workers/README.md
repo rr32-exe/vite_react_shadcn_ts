@@ -86,6 +86,23 @@ This Worker now includes a `/api/stripe-webhook` POST endpoint that verifies Str
 
   stripe trigger checkout.session.completed
 
+### Admin endpoints (read-only)
+
+A secure admin interface is available under `/api/admin/*` and requires the `ADMIN_SECRET` secret (send as `Authorization: Bearer <ADMIN_SECRET>` or `x-admin-secret` header):
+
+- GET `/api/admin/orders` - optional query `id`, `email`, `limit`
+- GET `/api/admin/payments` - optional query `id`, `stripe_payment_intent`, `limit`
+
+Set the secret with:
+
+  wrangler secret put ADMIN_SECRET
+
+### Monitoring & retries
+
+Critical writes in the webhook handler now use retry logic and exponential backoff. If a persistent failure occurs and you have a monitoring webhook, the worker will POST a failure payload to `MONITORING_WEBHOOK_URL` (optional variable).
+
+Set a monitoring webhook URL in the Cloudflare dashboard as `MONITORING_WEBHOOK_URL` (plain var). If you don't have one, the worker will simply log errors to console.
+
 ### CI / Deploy
 
 A GitHub Actions workflow has been added at `.github/workflows/deploy-workers.yml` that publishes the worker on push to `main`. Set these GitHub secrets:

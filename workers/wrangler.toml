@@ -16,4 +16,10 @@ workers_dev = true
 # For example:
 #   wrangler secret put STRIPE_SECRET_KEY
 #   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-# Also set SUPABASE_URL using `wrangler env` or in the dashboard under "Variables".
+#   wrangler secret put STRIPE_WEBHOOK_SECRET
+#   wrangler secret put ADMIN_SECRET
+# You can also add variables in the dashboard or under [vars] below.
+
+[vars]
+# SUPABASE_URL = "https://xyz.supabase.co"  # prefer to set in Cloudflare dashboard or via wrangler env
+# MONITORING_WEBHOOK_URL = "https://hooks.example.com/your-monitor"
