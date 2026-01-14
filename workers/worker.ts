@@ -375,7 +375,15 @@ async function sendToSentry(err: any, env: any) {
   const parsed = parseDsn(dsn);
   if (!parsed || !parsed.projectId) return;
   const url = `${parsed.host}/api/${parsed.projectId}/store/`;
-  const event = {
+  const extra: any = { worker_env: 'cloudflare' };
+  // Add release and environment tags if present
+  if (env.SENTRY_RELEASE) {
+    extra.release = env.SENTRY_RELEASE;
+  }
+  if (env.WORKER_ENV) {
+    extra.worker_env_name = env.WORKER_ENV;
+  }
+  const event: any = {
     event_id: (Math.random() + 1).toString(36).substring(2, 12),
     message: String(err?.message || err),
     platform: 'javascript',
@@ -383,15 +391,8 @@ async function sendToSentry(err: any, env: any) {
     exception: [{ value: String(err?.stack || err), type: err?.name || 'Error' }],
     level: 'error',
     timestamp: new Date().toISOString(),
-    extra: { worker_env: 'cloudflare' }
+    extra
   };
-  // Add release and environment tags if present
-  if (env.SENTRY_RELEASE) {
-    event.extra.release = env.SENTRY_RELEASE;
-  }
-  if (env.WORKER_ENV) {
-    event.extra.worker_env_name = env.WORKER_ENV;
-  }
 
   try {
     await fetch(url, {
@@ -591,17 +592,17 @@ async function handleGithubCallback(request: Request, env: any) {
   const login = userJson.login;
 
   // optional allowlist
-  const allowUsers = (env.ADMIN_GITHUB_USERS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const allowUsers = (env.ADMIN_GITHUB_USERS || '').split(',').map((s: string) => s.trim()).filter(Boolean);
   if (allowUsers.length > 0 && !allowUsers.includes(login)) return new Response('Unauthorized', { status: 401 });
 
   // optional org membership check
-  const allowOrgs = (env.ADMIN_GITHUB_ORGS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const allowOrgs = (env.ADMIN_GITHUB_ORGS || '').split(',').map((s: string) => s.trim()).filter(Boolean);
   if (allowOrgs.length > 0) {
     const orgsResp = await fetch('https://api.github.com/user/orgs', { headers: { Authorization: `token ${accessToken}`, 'User-Agent': 'worker' } });
     if (!orgsResp.ok) return new Response('Failed to check orgs', { status: 500 });
     const orgsJson = await orgsResp.json();
     const memberOrgs = orgsJson.map((o: any) => o.login);
-    const isMember = allowOrgs.some((o) => memberOrgs.includes(o));
+    const isMember = allowOrgs.some((o: string) => memberOrgs.includes(o));
     if (!isMember) return new Response('Unauthorized (org membership required)', { status: 401 });
   }
 

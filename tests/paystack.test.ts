@@ -1,3 +1,5 @@
+/// <reference types="vitest" />
+/// <reference types="node" />
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import worker from '../workers/worker';
 
@@ -9,11 +11,11 @@ describe('Paystack webhook', () => {
   let originalFetch: any;
 
   beforeEach(() => {
-    originalFetch = (global as any).fetch;
+    originalFetch = (globalThis as any).fetch;
   });
 
   afterEach(() => {
-    (global as any).fetch = originalFetch;
+    (globalThis as any).fetch = originalFetch;
     vi.restoreAllMocks();
   });
 
