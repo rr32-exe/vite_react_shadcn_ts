@@ -43,7 +43,7 @@ jobs:
           wrangler publish --account-id ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Create Sentry release & upload sourcemaps (optional)
-        if: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
+        if: "${{ secrets.SENTRY_AUTH_TOKEN != '' }}"
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
