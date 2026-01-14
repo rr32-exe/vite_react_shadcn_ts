@@ -1,5 +1,5 @@
 name = "services-api"
-main = "workers/worker.ts"
+main = "worker.ts"
 compatibility_date = "2026-01-13"
 workers_dev = true
 
