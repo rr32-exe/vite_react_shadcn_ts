@@ -70,26 +70,40 @@ async function updateWranglerTomlVars(replacements) {
 }
 
 async function run() {
-  console.log('\nInteractive Installer — Worker + Supabase + Stripe\n');
+  console.log('\nInteractive Installer — Worker + Supabase + Paystack\n');
 
   // Check for wrangler
   try { await runCmd('wrangler', ['--version']); } catch (err) { console.warn('wrangler not found; please install it (npm i -g wrangler) and login with `wrangler login` before running this installer.'); }
 
-  const stripeKey = await rl.question('Stripe Secret Key (STRIPE_SECRET_KEY): ');
+  const paystackKey = await rl.question('Paystack Secret Key (PAYSTACK_SECRET_KEY): ');
   const supabaseKey = await rl.question('Supabase Service Role Key (SUPABASE_SERVICE_ROLE_KEY): ');
   const supabaseUrl = await rl.question('Supabase URL (SUPABASE_URL): ');
-  const webhookSecret = await rl.question('Stripe Webhook Secret (STRIPE_WEBHOOK_SECRET): ');
+  const webhookSecret = await rl.question('Paystack Webhook Secret (PAYSTACK_WEBHOOK_SECRET): ');
   const adminSecret = await rl.question('Admin Secret for admin UI (ADMIN_SECRET): ');
   const sentryDsn = await rl.question('Sentry DSN (optional, press enter to skip): ');
   const monitoringWebhook = await rl.question('Monitoring Webhook URL (optional): ');
   const rateLimitMax = await rl.question('Rate limit max (requests per window, default 60): ') || '60';
   const rateLimitWindow = await rl.question('Rate limit window (seconds, default 60): ') || '60';
+  const githubClientId = await rl.question('GitHub Client ID (optional): ');
+  const githubClientSecret = await rl.question('GitHub Client Secret (optional): ');
+  const adminGithubUsers = await rl.question('Comma-separated allowed GitHub usernames (optional): ');
+  const adminGithubOrgs = await rl.question('Comma-separated allowed GitHub orgs (optional): ');
+  const adminUsername = await rl.question('Admin username (for built-in auth, optional): ');
+  const adminPassword = await rl.question('Admin password (for built-in auth, optional): ');
+  const adminJwtSecret = await rl.question('Admin JWT secret (for signing tokens): ');
+  const adminJwtExpires = await rl.question('Admin JWT expiry (seconds, default 86400): ') || '86400';
+  const oauthKvChoice = await yesNoPrompt('Do you want to create a KV namespace for OAuth state (recommended)?', true);
+  let kvId = '';
+  if (oauthKvChoice) {
+    console.log('\nTo create a KV namespace run: wrangler kv:namespace create "OAUTH_KV"');
+    kvId = await rl.question('If you created it, paste the namespace id (optional): ');
+  }
 
   // Set secrets using wrangler
   console.log('\nSetting Wrangler secrets...');
-  if (stripeKey) await setWranglerSecret('STRIPE_SECRET_KEY', stripeKey);
+  if (paystackKey) await setWranglerSecret('PAYSTACK_SECRET_KEY', paystackKey);
   if (supabaseKey) await setWranglerSecret('SUPABASE_SERVICE_ROLE_KEY', supabaseKey);
-  if (webhookSecret) await setWranglerSecret('STRIPE_WEBHOOK_SECRET', webhookSecret);
+  if (webhookSecret) await setWranglerSecret('PAYSTACK_WEBHOOK_SECRET', webhookSecret);
   if (adminSecret) await setWranglerSecret('ADMIN_SECRET', adminSecret);
 
   // Optionally set SUPABASE_URL as secret or var
@@ -104,14 +118,23 @@ async function run() {
   if (monitoringWebhook) await updateWranglerTomlVars({ MONITORING_WEBHOOK_URL: monitoringWebhook });
   if (rateLimitMax) await updateWranglerTomlVars({ RATE_LIMIT_MAX: rateLimitMax });
   if (rateLimitWindow) await updateWranglerTomlVars({ RATE_LIMIT_WINDOW: rateLimitWindow });
+  if (githubClientId) await updateWranglerTomlVars({ GITHUB_CLIENT_ID: githubClientId });
+  if (githubClientSecret) await setWranglerSecret('GITHUB_CLIENT_SECRET', githubClientSecret);
+  if (adminGithubUsers) await updateWranglerTomlVars({ ADMIN_GITHUB_USERS: adminGithubUsers });
+  if (adminGithubOrgs) await updateWranglerTomlVars({ ADMIN_GITHUB_ORGS: adminGithubOrgs });
+  if (adminUsername) await updateWranglerTomlVars({ ADMIN_USERNAME: adminUsername });
+  if (adminPassword) await setWranglerSecret('ADMIN_PASSWORD', adminPassword);
+  if (adminJwtSecret) await setWranglerSecret('ADMIN_JWT_SECRET', adminJwtSecret);
+  if (adminJwtExpires) await updateWranglerTomlVars({ ADMIN_JWT_EXPIRES: adminJwtExpires });
+  if (kvId) await updateWranglerTomlVars({ OAUTH_KV_ID: kvId });
 
   // Optionally set GitHub repo secrets
   const setGh = await yesNoPrompt('Do you want to set these as GitHub repo secrets via `gh` CLI? (requires gh authenticated)', false);
   if (setGh) {
     try { await runCmd('gh', ['--version']); } catch (err) { console.warn('gh not found or not authenticated. Skipping GitHub secrets.'); }
-    if (stripeKey) await setGhSecret('STRIPE_SECRET_KEY', stripeKey);
+    if (paystackKey) await setGhSecret('PAYSTACK_SECRET_KEY', paystackKey);
     if (supabaseKey) await setGhSecret('SUPABASE_SERVICE_ROLE_KEY', supabaseKey);
-    if (webhookSecret) await setGhSecret('STRIPE_WEBHOOK_SECRET', webhookSecret);
+    if (webhookSecret) await setGhSecret('PAYSTACK_WEBHOOK_SECRET', webhookSecret);
     if (adminSecret) await setGhSecret('ADMIN_SECRET', adminSecret);
     if (supabaseUrl) await setGhSecret('SUPABASE_URL', supabaseUrl);
     if (sentryDsn) await setGhSecret('SENTRY_DSN', sentryDsn);

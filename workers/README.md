@@ -7,7 +7,7 @@ This Worker exposes three endpoints under `/api/*` that are equivalent to the De
 - POST /api/newsletter-subscribe
 
 Quick overview:
-- Uses Stripe REST API to create Checkout Sessions (no Node-only Stripe SDK required).
+- Uses Paystack REST API to initialize transactions (no Node-only SDK required).
 - Uses Supabase REST (PostgREST) and the Service Role key to insert/upsert rows.
 - CORS ready and returns JSON responses.
 
@@ -24,8 +24,8 @@ Quick overview:
 
 3. Add secrets and variables:
 
-   # Stripe secret
-   wrangler secret put STRIPE_SECRET_KEY
+   # Paystack secret
+   wrangler secret put PAYSTACK_SECRET_KEY
 
    # Supabase service role key (secret)
    wrangler secret put SUPABASE_SERVICE_ROLE_KEY
@@ -70,28 +70,22 @@ curl -X POST "https://<your-subdomain>.workers.dev/api/newsletter-subscribe" \
 
 - The worker uses Supabase PostgREST endpoints (`/rest/v1/<table>`). Make sure the relevant tables (`orders`, `contact_submissions`, `newsletter_subscribers`) exist and have the columns used in the requests.
 - For `newsletter_subscribe` we use `on_conflict=email,site` to emulate upsert behavior.
-- If you prefer the official Stripe SDK for Edge, you can swap the REST call for the SDK (note: some Stripe SDKs depend on Node APIs and may need bundling).
+- If you prefer a payments provider SDK for Edge (e.g., Paystack SDK), you can swap the REST call for the SDK (note: some SDKs depend on Node APIs and may need bundling).
 
-### Stripe Webhooks
+### Paystack Webhooks
 
-This Worker now includes a `/api/stripe-webhook` POST endpoint that verifies Stripe webhook signatures using a webhook secret and records payments in the `payments` table and marks `orders` as `paid` on successful events.
+This Worker includes a `/api/paystack-webhook` POST endpoint that verifies Paystack webhook signatures and records payments in the `payments` table and marks `orders` as `paid` on successful events.
 
-- Add the webhook secret: `wrangler secret put STRIPE_WEBHOOK_SECRET`
-- Configure Stripe to send webhooks to `https://<your-subdomain>.workers.dev/api/stripe-webhook`
-- For local testing, use the Stripe CLI:
-
-  stripe listen --forward-to https://<your-subdomain>.workers.dev/api/stripe-webhook
-
-  Or trigger a test event:
-
-  stripe trigger checkout.session.completed
+- Add the webhook secret: `wrangler secret put PAYSTACK_WEBHOOK_SECRET`
+- Configure Paystack to send webhooks to `https://<your-subdomain>.workers.dev/api/paystack-webhook`
+- For local testing, generate a test transaction in the Paystack dashboard or use a webhook test tool to POST a sample `charge.success` event to the webhook endpoint.
 
 ### Admin endpoints (read-only)
 
 A secure admin interface is available under `/api/admin/*` and requires the `ADMIN_SECRET` secret (send as `Authorization: Bearer <ADMIN_SECRET>` or `x-admin-secret` header):
 
 - GET `/api/admin/orders` - optional query `id`, `email`, `limit`
-- GET `/api/admin/payments` - optional query `id`, `stripe_payment_intent`, `limit`
+- GET `/api/admin/payments` - optional query `id`, `stripe_payment_intent`, `paystack_reference`, `paystack_transaction_id`, `limit`
 
 Set the secret with:
 
@@ -101,7 +95,13 @@ You can also use the interactive installer to set secrets and vars:
 
   npm run setup:workers
 
-If you want GitHub OAuth for admin login, register an OAuth app at https://github.com/settings/developers and set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` (and optionally `ADMIN_GITHUB_USERS` to restrict who can log in). The OAuth callback URL must be `https://<your-host>/api/auth/github/callback`.
+If you want GitHub OAuth for admin login, register an OAuth app at https://github.com/settings/developers and set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` (and optionally `ADMIN_GITHUB_USERS` or `ADMIN_GITHUB_ORGS` to restrict who can log in). The OAuth callback URL must be `https://<your-host>/api/auth/github/callback`.
+
+We now store the OAuth `state` in a KV namespace `OAUTH_KV` to prevent replay; create one with:
+
+  wrangler kv:namespace create "OAUTH_KV"
+
+Then set the namespace id in `wrangler.toml` (or run the interactive installer and paste the id when prompted).
 
 ### Monitoring & retries
 

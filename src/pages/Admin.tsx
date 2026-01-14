@@ -78,9 +78,8 @@ export default function AdminPage() {
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold mb-4">Admin Dashboard</h1>
-      <div className="mb-4">
-        <label className="block">Admin Secret (keeps UI simple — consider using more secure auth)</label>
-        <input className="border p-2 w-full" value={secret} onChange={e => setSecret(e.target.value)} placeholder="Enter ADMIN_SECRET" />
+          <div className="mb-4">
+        <p className="text-sm text-slate-600">Authenticate with your admin credentials or use GitHub OAuth. The admin token is stored in localStorage for convenience.</p>
       </div>
 
       <div className="flex gap-2 mb-4">
@@ -119,6 +118,7 @@ export default function AdminPage() {
                     <th className="border p-2">Service</th>
                     <th className="border p-2">Total</th>
                     <th className="border p-2">Status</th>
+                    <th className="border p-2">Paystack Ref</th>
                     <th className="border p-2">Created</th>
                   </>
                 ) : (
@@ -128,6 +128,8 @@ export default function AdminPage() {
                     <th className="border p-2">Amount</th>
                     <th className="border p-2">Currency</th>
                     <th className="border p-2">Status</th>
+                    <th className="border p-2">Paystack Ref</th>
+                    <th className="border p-2">Transaction ID</th>
                     <th className="border p-2">Created</th>
                   </>
                 )}
@@ -147,6 +149,7 @@ export default function AdminPage() {
                       <td className="border p-2">{row.service_name}</td>
                       <td className="border p-2">{(row.total_amount/100).toFixed(2)} {row.currency}</td>
                       <td className="border p-2">{row.status}</td>
+                      <td className="border p-2">{row.paystack_reference ?? ''}</td>
                       <td className="border p-2">{new Date(row.created_at).toLocaleString()}</td>
                     </>
                   ) : (
@@ -156,6 +159,8 @@ export default function AdminPage() {
                       <td className="border p-2">{(row.amount/100).toFixed(2)}</td>
                       <td className="border p-2">{row.currency}</td>
                       <td className="border p-2">{row.status}</td>
+                      <td className="border p-2">{row.paystack_reference ?? ''}</td>
+                      <td className="border p-2">{row.paystack_transaction_id ?? ''}</td>
                       <td className="border p-2">{new Date(row.created_at).toLocaleString()}</td>
                     </>
                   )}

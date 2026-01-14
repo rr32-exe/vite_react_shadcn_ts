@@ -52,7 +52,7 @@ export const useCheckout = (): UseCheckoutReturn => {
         return null;
       }
 
-      // Redirect to Stripe checkout
+      // Redirect to Paystack hosted payment page
       if (responseData?.sessionUrl) {
         window.location.href = responseData.sessionUrl;
       }

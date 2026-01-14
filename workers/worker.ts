@@ -4,13 +4,13 @@
    - POST /api/newsletter-subscribe
 
    Uses environment variables (set with `wrangler secret put` or via `vars`):
-   - STRIPE_SECRET_KEY (secret)
+   - PAYSTACK_SECRET_KEY (secret)
    - SUPABASE_URL (secret or var, e.g., https://xyz.supabase.co)
    - SUPABASE_SERVICE_ROLE_KEY (secret)
 
    Implementation notes:
    - Uses Supabase REST (PostgREST) with the Service Role key to insert/upsert rows.
-   - Uses Stripe REST API to create Checkout sessions (form-encoded body).
+   - Uses Paystack REST API to initialize transactions (no SDK required).
 */
 
 const CORS_HEADERS = {
@@ -88,8 +88,8 @@ export default {
         return handleNewsletterSubscribe(request, env);
       }
 
-      if (url.pathname === '/api/stripe-webhook' && request.method === 'POST') {
-        return handleStripeWebhook(request, env);
+      if (url.pathname === '/api/paystack-webhook' && request.method === 'POST') {
+        return handlePaystackWebhook(request, env);
       }
 
       if (url.pathname === '/api/admin/login' && request.method === 'POST') {
@@ -127,8 +127,8 @@ const services: Record<string, { name: string; price: number; currency: string }
 };
 
 async function handleCreateCheckout(request: Request, env: any) {
-  const stripeKey = env.STRIPE_SECRET_KEY;
-  if (!stripeKey) return jsonResponse({ error: 'Stripe not configured' }, 500);
+  const paystackKey = env.PAYSTACK_SECRET_KEY;
+  if (!paystackKey) return jsonResponse({ error: 'Paystack not configured' }, 500);
 
   const supabaseUrl = env.SUPABASE_URL;
   const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
@@ -179,55 +179,58 @@ async function handleCreateCheckout(request: Request, env: any) {
   const orderRows = await orderResp.json();
   const order = orderRows[0];
 
-  // Create Stripe checkout session using Stripe REST API (form-encoded)
-  const params = new URLSearchParams();
-  params.append('payment_method_types[]', 'card');
-  params.append('customer_email', customerEmail.toLowerCase());
-  params.append('line_items[0][price_data][currency]', service.currency.toLowerCase());
-  params.append('line_items[0][price_data][product_data][name]', `${service.name} - 50% Deposit`);
-  params.append('line_items[0][price_data][product_data][description]', `Deposit payment for ${service.name}. Remaining 50% due upon completion.`);
-  params.append('line_items[0][price_data][unit_amount]', String(depositAmountCents));
-  params.append('line_items[0][quantity]', '1');
-  params.append('mode', 'payment');
-  params.append('success_url', successUrl || `${request.headers.get('origin')}/payment-success?session_id={CHECKOUT_SESSION_ID}`);
-  params.append('cancel_url', cancelUrl || `${request.headers.get('origin')}/payment-cancelled`);
-  params.append('metadata[order_id]', String(order.id));
-  params.append('metadata[service_id]', serviceId);
-  params.append('metadata[service_name]', service.name);
-  params.append('metadata[customer_name]', customerName);
-  params.append('metadata[payment_type]', 'deposit');
-
-  const stripeResp = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+  // Initialize Paystack transaction (returns authorization_url and reference)
+  const initResp = await fetch('https://api.paystack.co/transaction/initialize', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${stripeKey}`,
-      'Content-Type': 'application/x-www-form-urlencoded'
+      Authorization: `Bearer ${paystackKey}`,
+      'Content-Type': 'application/json'
     },
-    body: params.toString()
+    body: JSON.stringify({
+      email: customerEmail.toLowerCase(),
+      amount: depositAmountCents,
+      currency: service.currency,
+      callback_url: successUrl || `${request.headers.get('origin')}/payment-success?reference={reference}`,
+      metadata: {
+        order_id: order.id,
+        service_id: serviceId,
+        service_name: service.name,
+        customer_name: customerName,
+        payment_type: 'deposit'
+      }
+    })
   });
 
-  const stripeBody = await stripeResp.json();
-  if (!stripeResp.ok) {
-    console.error('Stripe error:', stripeBody);
-    return jsonResponse({ error: stripeBody.error?.message || 'Failed to create Stripe session' }, 500);
+  const initBody = await initResp.json();
+  if (!initResp.ok) {
+    console.error('Paystack error:', initBody);
+    return jsonResponse({ error: initBody.message || 'Failed to initialize Paystack transaction' }, 500);
   }
 
-  // Update order with stripe_session_id
-  await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${order.id}`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`,
-      Prefer: 'return=representation'
-    },
-    body: JSON.stringify({ stripe_session_id: stripeBody.id })
-  });
+  const reference = initBody.data?.reference;
+  const authorizationUrl = initBody.data?.authorization_url;
 
+  // Update order with paystack_reference (schema migration to add this column will be applied separately)
+  try {
+    await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${order.id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+        Prefer: 'return=representation'
+      },
+      body: JSON.stringify({ paystack_reference: reference })
+    });
+  } catch (err) {
+    console.error('Failed to update order with paystack reference:', err);
+  }
+
+  // Keep response shape similar to previous Stripe-based API so frontend continues to work
   return jsonResponse({
     success: true,
-    sessionId: stripeBody.id,
-    sessionUrl: stripeBody.url,
+    sessionId: reference,
+    sessionUrl: authorizationUrl,
     orderId: order.id,
     depositAmount: depositAmountCents / 100,
     totalAmount: totalAmountCents / 100,
@@ -497,7 +500,7 @@ async function handleAdminRequest(request: Request, env: any) {
       const rows = await resp.json();
       if (path === '/orders.csv') {
         // Return CSV
-        const header = ['id','customer_name','customer_email','service_id','service_name','total_amount','deposit_amount','currency','status','stripe_session_id','created_at'];
+        const header = ['id','customer_name','customer_email','service_id','service_name','total_amount','deposit_amount','currency','status','stripe_session_id','paystack_reference','created_at'];
         const csv = [header.join(',')].concat(rows.map((r: any) => header.map(h => `"${String(r[h] ?? '')}"`).join(','))).join('\n');
         return new Response(csv, { headers: { 'Content-Type': 'text/csv', ...CORS_HEADERS } });
       }
@@ -508,6 +511,8 @@ async function handleAdminRequest(request: Request, env: any) {
       let endpoint = `${supabaseUrl}/rest/v1/payments?select=*&limit=${limit}&order=created_at.desc`;
       if (id) endpoint = `${supabaseUrl}/rest/v1/payments?id=eq.${encodeURIComponent(id)}`;
       else if (query.get('stripe_payment_intent')) endpoint = `${supabaseUrl}/rest/v1/payments?stripe_payment_intent=eq.${encodeURIComponent(query.get('stripe_payment_intent') || '')}`;
+      else if (query.get('paystack_reference')) endpoint = `${supabaseUrl}/rest/v1/payments?paystack_reference=eq.${encodeURIComponent(query.get('paystack_reference') || '')}`;
+      else if (query.get('paystack_transaction_id')) endpoint = `${supabaseUrl}/rest/v1/payments?paystack_transaction_id=eq.${encodeURIComponent(query.get('paystack_transaction_id') || '')}`;
 
       const resp = await fetch(endpoint, { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } });
       const rows = resp.ok ? await resp.json() : { error: await resp.text() };
@@ -540,9 +545,13 @@ async function handleGithubStart(request: Request, env: any) {
   const clientId = env.GITHUB_CLIENT_ID;
   const redirectUri = `${request.headers.get('origin')}/api/auth/github/callback`;
   const state = Math.random().toString(36).substring(2);
-  // store state in memory (for demo purposes; in production use KV)
-  // attach state to redirect
-  const url = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}&scope=read:user`;
+  // store state in KV with TTL (5 minutes)
+  try {
+    if (env.OAUTH_KV) await env.OAUTH_KV.put(`gh_state:${state}`, '1', { expirationTtl: 300 });
+  } catch (err) {
+    console.warn('Failed to store state in KV', err);
+  }
+  const url = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}&scope=read:user%20read:org`;
   return Response.redirect(url, 302);
 }
 
@@ -553,6 +562,18 @@ async function handleGithubCallback(request: Request, env: any) {
   const clientId = env.GITHUB_CLIENT_ID;
   const clientSecret = env.GITHUB_CLIENT_SECRET;
   if (!code || !clientId || !clientSecret) return new Response('Bad Request', { status: 400 });
+
+  // Verify state from KV
+  try {
+    if (env.OAUTH_KV) {
+      const v = await env.OAUTH_KV.get(`gh_state:${state}`);
+      if (!v) return new Response('Invalid or expired state', { status: 400 });
+      // delete key
+      await env.OAUTH_KV.delete(`gh_state:${state}`);
+    }
+  } catch (err) {
+    console.warn('KV check failed for state', err);
+  }
 
   // Exchange code for token
   const tokenResp = await fetch('https://github.com/login/oauth/access_token', {
@@ -572,6 +593,17 @@ async function handleGithubCallback(request: Request, env: any) {
   // optional allowlist
   const allowUsers = (env.ADMIN_GITHUB_USERS || '').split(',').map(s => s.trim()).filter(Boolean);
   if (allowUsers.length > 0 && !allowUsers.includes(login)) return new Response('Unauthorized', { status: 401 });
+
+  // optional org membership check
+  const allowOrgs = (env.ADMIN_GITHUB_ORGS || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (allowOrgs.length > 0) {
+    const orgsResp = await fetch('https://api.github.com/user/orgs', { headers: { Authorization: `token ${accessToken}`, 'User-Agent': 'worker' } });
+    if (!orgsResp.ok) return new Response('Failed to check orgs', { status: 500 });
+    const orgsJson = await orgsResp.json();
+    const memberOrgs = orgsJson.map((o: any) => o.login);
+    const isMember = allowOrgs.some((o) => memberOrgs.includes(o));
+    if (!isMember) return new Response('Unauthorized (org membership required)', { status: 401 });
+  }
 
   // issue JWT and redirect back to admin UI
   const jwtSecret = env.ADMIN_JWT_SECRET;
@@ -796,6 +828,146 @@ async function handleStripeWebhook(request: Request, env: any) {
     return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
   } catch (err: any) {
     console.error('Webhook handling error:', err);
+    return new Response(JSON.stringify({ error: err.message || 'Webhook handling error' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+  }
+}
+
+async function hmacSHA512Hex(secret: string, message: string) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-512' },
+    false,
+    ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message));
+  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function handlePaystackWebhook(request: Request, env: any) {
+  const webhookSecret = env.PAYSTACK_WEBHOOK_SECRET;
+  const payload = await request.text();
+  const sigHeader = request.headers.get('x-paystack-signature') || '';
+
+  if (webhookSecret) {
+    let expected: string;
+    try {
+      expected = await hmacSHA512Hex(webhookSecret, payload);
+    } catch (err) {
+      console.error('Failed computing HMAC for Paystack webhook', err);
+      return new Response(JSON.stringify({ error: 'Webhook verification error' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+    }
+    if (!secureCompare(expected, sigHeader)) {
+      console.error('Invalid Paystack webhook signature');
+      await sendMonitoringAlert(env, { level: 'warn', action: 'webhook_invalid_signature', ip: getClientIP(request) });
+      return new Response(JSON.stringify({ error: 'Invalid signature' }), { status: 400, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+    }
+  }
+
+  let event: any;
+  try {
+    event = JSON.parse(payload);
+  } catch (err) {
+    console.error('Invalid Paystack JSON payload', err);
+    await sendMonitoringAlert(env, { level: 'error', action: 'webhook_invalid_json', error: String(err) });
+    return new Response(JSON.stringify({ error: 'Invalid payload' }), { status: 400, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+  }
+
+  const supabaseUrl = env.SUPABASE_URL;
+  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Supabase not configured (paystack webhook)');
+    return new Response(JSON.stringify({ error: 'Supabase not configured' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+  }
+
+  try {
+    const type = event.event || event.type || (event.data && event.data.event) || null;
+
+    if (type === 'charge.success' || type === 'transaction.success' || type === 'transfer.success' || (event.data && event.data.status === 'success')) {
+      const data = event.data || {};
+      const reference = data.reference || null;
+      const transactionId = data.id || null;
+      const amount = data.amount || 0;
+      const currency = data.currency || null;
+      const orderId = data.metadata?.order_id ? Number(data.metadata.order_id) : null;
+
+      // Idempotency check: does a payment with this paystack_reference already exist?
+      if (reference) {
+        const existsResp = await fetch(`${supabaseUrl}/rest/v1/payments?paystack_reference=eq.${encodeURIComponent(reference)}`, {
+          headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }
+        });
+        if (existsResp.ok) {
+          const rows = await existsResp.json();
+          if (rows && rows.length > 0) {
+            console.log('Payment already recorded for', reference);
+            // still ensure order status set to paid
+            if (orderId) {
+              await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${orderId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+                body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() })
+              });
+            } else if (reference) {
+              await fetch(`${supabaseUrl}/rest/v1/orders?paystack_reference=eq.${encodeURIComponent(reference)}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+                body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() })
+              });
+            }
+            return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+          }
+        }
+      }
+
+      // Insert payment record (with retries)
+      try {
+        const paymentInsertOptions: RequestInit = {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Prefer: 'return=representation' },
+          body: JSON.stringify([{
+            order_id: orderId,
+            paystack_reference: reference,
+            paystack_transaction_id: transactionId,
+            amount: amount,
+            currency: currency,
+            status: 'succeeded',
+            raw: event
+          }])
+        };
+        try {
+          await retryFetchJson(`${supabaseUrl}/rest/v1/payments`, paymentInsertOptions, 4, 200);
+        } catch (err) {
+          console.error('Failed to insert payment after retries:', err);
+          await sendMonitoringAlert(env, { level: 'error', action: 'insert_payment', error: String(err), event });
+        }
+      } catch (err) {
+        console.error('Error inserting payment:', err);
+      }
+
+      // Update order status (with retries)
+      const patchOptions: RequestInit = {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+        body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() })
+      };
+      try {
+        if (orderId) {
+          await retryFetchJson(`${supabaseUrl}/rest/v1/orders?id=eq.${orderId}`, patchOptions, 4, 200);
+        } else if (reference) {
+          await retryFetchJson(`${supabaseUrl}/rest/v1/orders?paystack_reference=eq.${encodeURIComponent(reference)}`, patchOptions, 4, 200);
+        }
+      } catch (err) {
+        console.error('Failed to update order status after retries:', err);
+        await sendMonitoringAlert(env, { level: 'error', action: 'update_order', error: String(err), reference, orderId });
+      }
+
+      return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+    }
+
+    // For other events, acknowledge
+    return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+  } catch (err: any) {
+    console.error('Paystack webhook handling error:', err);
     return new Response(JSON.stringify({ error: err.message || 'Webhook handling error' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
   }
 }

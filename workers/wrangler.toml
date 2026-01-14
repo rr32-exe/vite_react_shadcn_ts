@@ -12,11 +12,11 @@ workers_dev = true
 [build]
   command = ""
 
-# NOTE: We recommend using `wrangler secret put` to set the STRIPE key and SUPABASE keys.
+# NOTE: We recommend using `wrangler secret put` to set the PAYSTACK key and SUPABASE keys.
 # For example:
-#   wrangler secret put STRIPE_SECRET_KEY
+#   wrangler secret put PAYSTACK_SECRET_KEY
 #   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-#   wrangler secret put STRIPE_WEBHOOK_SECRET
+#   wrangler secret put PAYSTACK_WEBHOOK_SECRET
 #   wrangler secret put ADMIN_SECRET
 # You can also add variables in the dashboard or under [vars] below.
 
@@ -34,6 +34,7 @@ workers_dev = true
 # GITHUB_CLIENT_ID = ""
 # GITHUB_CLIENT_SECRET = ""
 # ADMIN_GITHUB_USERS = "ghuser1,ghuser2"
+# ADMIN_GITHUB_ORGS = "org1,org2"  # only allow users in these orgs
 # JWT settings for Admin UI
 # ADMIN_USERNAME = "admin"
 # ADMIN_PASSWORD = "strongpassword"
@@ -42,3 +43,8 @@ workers_dev = true
 # Optional env name for Sentry
 # WORKER_ENV = "production"
 # SENTRY_RELEASE = ""
+
+# KV namespaces (for storing transient OAuth state / allowlist etc.)
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "<YOUR_KV_NAMESPACE_ID>"  # create a KV namespace and put the id here or set via wrangler/dashboard
