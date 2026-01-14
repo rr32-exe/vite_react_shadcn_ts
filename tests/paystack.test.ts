@@ -74,4 +74,22 @@ describe('Paystack webhook', () => {
     expect(body[0].paystack_transaction_id).toBe('txn_test_123');
     expect(body[0].amount).toBe(5000);
   });
+
+  it('rejects invalid signature', async () => {
+    const payload = JSON.stringify({ event: 'charge.success', data: { reference: 'bad_ref', id: 'bad_id', amount: 1000, status: 'success' } });
+    // wrong signature
+    const sig = 'deadbeef';
+
+    (global as any).fetch = vi.fn(async (url: string, opts: any) => ({ ok: true, json: async () => [] }) as any);
+
+    const req = new Request('https://example.com/api/paystack-webhook', {
+      method: 'POST',
+      headers: { 'x-paystack-signature': sig, 'content-type': 'application/json' },
+      body: payload
+    });
+
+    const env = { SUPABASE_URL: 'https://db.example', SUPABASE_SERVICE_ROLE_KEY: 'svc_key', PAYSTACK_WEBHOOK_SECRET: PAYSTACK_SECRET } as any;
+    const res = await (worker as any).fetch(req, env);
+    expect(res.status).toBe(400);
+  });
 });
