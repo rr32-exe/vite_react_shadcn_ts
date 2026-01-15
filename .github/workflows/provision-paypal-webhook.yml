@@ -1,0 +1,66 @@
+name: Provision PayPal Webhook
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'PayPal mode to use (sandbox or live)'
+        required: false
+        default: 'sandbox'
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    name: Create PayPal webhook (manual)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Ensure required secrets are present
+        run: |
+          if [ -z "${{ secrets.PAYPAL_CLIENT_ID }}" ] || [ -z "${{ secrets.PAYPAL_SECRET }}" ]; then echo "PAYPAL_CLIENT_ID and PAYPAL_SECRET must be set as repo secrets."; exit 1; fi
+          if [ -z "${{ secrets.CF_WORKER_URL }}" ]; then echo "CF_WORKER_URL not set. Use the deployed worker preview URL or your production URL as the target for the webhook."; exit 1; fi
+
+      - name: Run create-paypal-webhook helper
+        id: create
+        env:
+          PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
+          PAYPAL_SECRET: ${{ secrets.PAYPAL_SECRET }}
+          PAYPAL_MODE: ${{ github.event.inputs.mode || 'sandbox' }}
+          WEBHOOK_URL: ${{ secrets.CF_WORKER_URL }}
+        run: |
+          set -e
+          echo "Creating PayPal webhook for $WEBHOOK_URL (mode=$PAYPAL_MODE)..."
+          OUTPUT=$(node scripts/create-paypal-webhook.js --ci 2>&1 || true)
+          echo "$OUTPUT"
+          # The helper emits a final JSON line when run under --ci with { "webhookId": "..." }
+          WEBHOOK_ID=$(echo "$OUTPUT" | jq -r 'select(.webhookId) .webhookId' 2>/dev/null || true)
+          if [ -z "$WEBHOOK_ID" ] || [ "$WEBHOOK_ID" = "null" ]; then
+            echo "Failed to extract webhook id from helper output."; exit 1
+          fi
+          echo "webhook_id=$WEBHOOK_ID" >> $GITHUB_OUTPUT
+
+      - name: Store webhook id as wrangler secret (optional)
+        if: ${{ secrets.CF_API_TOKEN != '' }}
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          echo "Found webhook id ${{ steps.create.outputs.webhook_id }}; storing as PAYPAL_WEBHOOK_ID via wrangler..."
+          npm install -g wrangler
+          printf "%s" "${{ steps.create.outputs.webhook_id }}" | wrangler secret put PAYPAL_WEBHOOK_ID --raw --config ./wrangler.toml
+
+      - name: Done
+        run: |
+          echo "PayPal webhook created with id: ${{ steps.create.outputs.webhook_id }}"
+          echo "If you did not store the webhook id automatically, run:\n  printf \"%s\" \"${{ steps.create.outputs.webhook_id }}\" | wrangler secret put PAYPAL_WEBHOOK_ID --raw --config ./wrangler.toml"

@@ -70,10 +70,24 @@ async function run() {
     const result = await createWebhook(token, base, webhookUrl);
     const webhookId = result.id || result.webhook_id || (result.webhook && result.webhook.id) || null;
     console.log('Created webhook:', JSON.stringify(result, null, 2));
+    let simulateResult = null;
+    if (webhookId && (process.env.SIMULATE === 'true' || process.argv.includes('--simulate'))) {
+      try {
+        simulateResult = await simulateEvent(token, base, webhookId, webhookUrl);
+        console.log('Simulation result:', JSON.stringify(simulateResult, null, 2));
+      } catch (err) {
+        console.error('Simulation failed:', err.message || err);
+      }
+    }
+
     if (webhookId) {
       console.log('\nWebhook ID:', webhookId);
       console.log('\nTo store this in your Worker secrets run:');
       console.log(`  printf "%s" "${webhookId}" | wrangler secret put PAYPAL_WEBHOOK_ID --raw`);
+      // In CI we emit a final JSON line for machine consumption
+      if (process.env.CI === 'true' || process.env.CI === '1' || process.argv.includes('--ci')) {
+        console.log(JSON.stringify({ webhookId, simulateResult }));
+      }
     } else {
       console.warn('Could not find webhook id in PayPal response. Inspect the printed response above.');
     }
