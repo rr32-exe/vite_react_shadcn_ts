@@ -79,6 +79,11 @@ async function run() {
   const supabaseKey = await rl.question('Supabase Service Role Key (SUPABASE_SERVICE_ROLE_KEY): ');
   const supabaseUrl = await rl.question('Supabase URL (SUPABASE_URL): ');
   const webhookSecret = await rl.question('Paystack Webhook Secret (PAYSTACK_WEBHOOK_SECRET): ');
+  // PayPal credentials (optional) — used for PayPal POC
+  const paypalClientId = await rl.question('PayPal Client ID (PAYPAL_CLIENT_ID, sandbox): ');
+  const paypalSecret = await rl.question('PayPal Secret (PAYPAL_SECRET, sandbox): ');
+  const paypalWebhookId = await rl.question('PayPal Webhook ID (PAYPAL_WEBHOOK_ID, sandbox): ');
+  const paypalMode = await rl.question('PayPal Mode (sandbox|live, default sandbox): ') || 'sandbox';
   const adminSecret = await rl.question('Admin Secret for admin UI (ADMIN_SECRET): ');
   const sentryDsn = await rl.question('Sentry DSN (optional, press enter to skip): ');
   const monitoringWebhook = await rl.question('Monitoring Webhook URL (optional): ');
@@ -104,6 +109,10 @@ async function run() {
   if (paystackKey) await setWranglerSecret('PAYSTACK_SECRET_KEY', paystackKey);
   if (supabaseKey) await setWranglerSecret('SUPABASE_SERVICE_ROLE_KEY', supabaseKey);
   if (webhookSecret) await setWranglerSecret('PAYSTACK_WEBHOOK_SECRET', webhookSecret);
+  if (paypalClientId) await setWranglerSecret('PAYPAL_CLIENT_ID', paypalClientId);
+  if (paypalSecret) await setWranglerSecret('PAYPAL_SECRET', paypalSecret);
+  if (paypalWebhookId) await setWranglerSecret('PAYPAL_WEBHOOK_ID', paypalWebhookId);
+  if (paypalMode) await updateWranglerTomlVars({ PAYPAL_MODE: paypalMode });
   if (adminSecret) await setWranglerSecret('ADMIN_SECRET', adminSecret);
 
   // Optionally set SUPABASE_URL as secret or var

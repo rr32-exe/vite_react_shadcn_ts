@@ -9,7 +9,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "deploy:workers": "wrangler publish",
+    "deploy:workers": "wrangler publish --config ./wrangler.toml",
     "setup:workers": "node scripts/setup-workers.js",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
     "postinstall": "echo 'Remember to run npm run setup:workers to configure your Worker'",

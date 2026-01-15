@@ -92,6 +92,14 @@ export default {
         return handlePaystackWebhook(request, env);
       }
 
+      if (url.pathname === '/api/paypal-webhook' && request.method === 'POST') {
+        return handlePayPalWebhook(request, env);
+      }
+
+      if (url.pathname === '/api/create-paypal-order' && request.method === 'POST') {
+        return handleCreatePayPalOrder(request, env);
+      }
+
       if (url.pathname === '/api/admin/login' && request.method === 'POST') {
         return handleAdminLogin(request, env);
       }
@@ -765,3 +773,250 @@ async function handlePaystackWebhook(request: Request, env: any) {
     return new Response(JSON.stringify({ error: err.message || 'Webhook handling error' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
   }
 }
+
+// ----------------- PayPal POC handlers -----------------
+
+let _paypalTokenCache: { token?: string; expiry?: number } = {};
+
+function getPayPalBaseUrl(env: any) {
+  return (env.PAYPAL_MODE && env.PAYPAL_MODE.toLowerCase() === 'live') ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
+}
+
+async function getPayPalAccessToken(env: any) {
+  const now = Date.now();
+  if (_paypalTokenCache.token && _paypalTokenCache.expiry && _paypalTokenCache.expiry > now) return _paypalTokenCache.token;
+
+  const clientId = env.PAYPAL_CLIENT_ID;
+  const clientSecret = env.PAYPAL_SECRET;
+  if (!clientId || !clientSecret) throw new Error('PayPal not configured');
+  const base = getPayPalBaseUrl(env);
+
+  const resp = await fetch(`${base}/v1/oauth2/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: 'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64') },
+    body: 'grant_type=client_credentials'
+  });
+  if (!resp.ok) {
+    const errBody = await resp.text();
+    throw new Error(`PayPal token request failed: ${errBody}`);
+  }
+  const body = await resp.json();
+  const token = body.access_token;
+  const expiresIn = Number(body.expires_in || 300);
+  _paypalTokenCache = { token, expiry: Date.now() + (expiresIn - 10) * 1000 };
+  return token;
+}
+
+async function handleCreatePayPalOrder(request: Request, env: any) {
+  const supabaseUrl = env.SUPABASE_URL;
+  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !supabaseKey) return jsonResponse({ error: 'Supabase not configured' }, 500);
+
+  const payload = await request.json();
+  const { serviceId, customerName, customerEmail, successUrl, cancelUrl } = payload;
+  if (!serviceId || !customerName || !customerEmail) return jsonResponse({ error: 'Service ID, customer name, and email are required' }, 400);
+  const service = services[serviceId];
+  if (!service) return jsonResponse({ error: 'Invalid service ID' }, 400);
+
+  // create order row in Supabase
+  const totalAmountCents = Math.round(service.price * 100);
+  const depositAmountCents = Math.round(totalAmountCents / 2);
+  const orderResp = await fetch(`${supabaseUrl}/rest/v1/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Prefer: 'return=representation' },
+    body: JSON.stringify([{
+      customer_name: customerName,
+      customer_email: customerEmail.toLowerCase(),
+      service_id: serviceId,
+      service_name: service.name,
+      total_amount: totalAmountCents,
+      deposit_amount: depositAmountCents,
+      currency: service.currency,
+      notes: payload.notes || null,
+      status: 'pending'
+    }])
+  });
+  if (!orderResp.ok) {
+    const errText = await orderResp.text();
+    console.error('Order creation failed (PayPal flow):', errText);
+    return jsonResponse({ error: 'Failed to create order' }, 500);
+  }
+  const order = (await orderResp.json())[0];
+
+  // Create PayPal order
+  try {
+    const token = await getPayPalAccessToken(env);
+    const base = getPayPalBaseUrl(env);
+    const createResp = await fetch(`${base}/v2/checkout/orders`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        intent: 'CAPTURE',
+        purchase_units: [{
+          reference_id: String(order.id),
+          amount: { currency_code: service.currency, value: (depositAmountCents / 100).toFixed(2) }
+        }],
+        application_context: {
+          return_url: successUrl || `${request.headers.get('origin')}/payment-success`,
+          cancel_url: cancelUrl || `${request.headers.get('origin')}/payment-cancel`
+        }
+      })
+    });
+    const initBody = await createResp.json();
+    if (!createResp.ok) {
+      console.error('PayPal create order error:', initBody);
+      return jsonResponse({ error: initBody.message || 'Failed to create PayPal order' }, 500);
+    }
+
+    const paypalOrderId = initBody.id;
+    const approveLink = (initBody.links || []).find((l: any) => l.rel === 'approve')?.href || null;
+
+    // Update order with paypal_order_id
+    try {
+      await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+        body: JSON.stringify({ paypal_order_id: paypalOrderId })
+      });
+    } catch (err) {
+      console.error('Failed to update order with paypal_order_id:', err);
+    }
+
+    return jsonResponse({ orderId: order.id, paypalOrderId, approveUrl: approveLink });
+  } catch (err: any) {
+    console.error('PayPal create order error:', err);
+    return jsonResponse({ error: String(err) }, 500);
+  }
+}
+
+async function handlePayPalWebhook(request: Request, env: any) {
+  const payloadText = await request.text();
+  let payload: any;
+  try {
+    payload = JSON.parse(payloadText);
+  } catch (e) {
+    console.error('Invalid PayPal JSON payload', e);
+    return new Response(JSON.stringify({ error: 'Invalid payload' }), { status: 400, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+  }
+
+  const supabaseUrl = env.SUPABASE_URL;
+  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Supabase not configured (PayPal webhook)');
+    return new Response(JSON.stringify({ error: 'Supabase not configured' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+  }
+
+  const paypalWebhookId = env.PAYPAL_WEBHOOK_ID;
+  if (!paypalWebhookId) {
+    console.error('PayPal webhook id not configured');
+    return new Response(JSON.stringify({ error: 'PayPal webhook not configured' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+  }
+
+  try {
+    const base = getPayPalBaseUrl(env);
+    const token = await getPayPalAccessToken(env);
+
+    // Prepare verification body
+    const verificationBody = {
+      auth_algo: request.headers.get('paypal-auth-algo'),
+      cert_url: request.headers.get('paypal-cert-url'),
+      transmission_id: request.headers.get('paypal-transmission-id'),
+      transmission_sig: request.headers.get('paypal-transmission-sig'),
+      transmission_time: request.headers.get('paypal-transmission-time'),
+      webhook_id: paypalWebhookId,
+      webhook_event: payload
+    };
+
+    const verifyResp = await fetch(`${base}/v1/notifications/verify-webhook-signature`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(verificationBody)
+    });
+
+    const verifyBody = await verifyResp.json();
+    if (!verifyResp.ok || verifyBody.verification_status !== 'SUCCESS') {
+      console.error('PayPal webhook verification failed', verifyBody);
+      await sendMonitoringAlert(env, { level: 'warn', action: 'paypal_webhook_invalid_signature', payload: verifyBody });
+      return new Response(JSON.stringify({ error: 'Invalid signature' }), { status: 400, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+    }
+
+    // Extract useful resource info (best-effort)
+    const eventType = payload.event_type || payload.event;
+    const resource = payload.resource || {};
+    // Prefer explicit order_id when present (captures may set resource.id to a capture id)
+    const paypalOrderId = resource.order_id || resource.id || (resource.purchase_units && resource.purchase_units[0] && resource.purchase_units[0].reference_id) || null;
+    const paypalTransactionId = (resource.payments && resource.payments.captures && resource.payments.captures[0] && resource.payments.captures[0].id) || resource.id || null;
+    const amount = (resource.amount && (resource.amount.value ? Math.round(Number(resource.amount.value) * 100) : null)) || null;
+    const orderRef = resource.reference_id || resource.custom_id || null;
+
+    // Only handle completed events (capture completed or order approved/captured)
+    const successful = (eventType && (eventType.includes('CAPTURE') || eventType.includes('ORDER') || eventType.includes('PAYMENT'))) || (resource.status && resource.status.toLowerCase() === 'completed');
+
+    if (successful && paypalOrderId) {
+      // Idempotency: check existing payment
+      try {
+        const existsResp = await fetch(`${supabaseUrl}/rest/v1/payments?paypal_order_id=eq.${encodeURIComponent(paypalOrderId)}`, { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } });
+        if (existsResp.ok) {
+          const rows = await existsResp.json();
+          if (rows && rows.length > 0) {
+            console.log('Payment already recorded for PayPal order', paypalOrderId);
+            // update orders to paid by reference if possible
+            if (orderRef) {
+              await fetch(`${supabaseUrl}/rest/v1/orders?paypal_order_id=eq.${encodeURIComponent(orderRef)}`, {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }, body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() })
+              });
+            }
+            return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+          }
+        }
+      } catch (err) {
+        console.error('PayPal idempotency check failed', err);
+      }
+
+      // Insert payment
+      try {
+        const paymentInsertOptions: RequestInit = {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Prefer: 'return=representation' },
+          body: JSON.stringify([{
+            order_id: orderRef ? Number(orderRef) : null,
+            paypal_order_id: paypalOrderId,
+            paypal_transaction_id: paypalTransactionId,
+            amount: amount || 0,
+            currency: resource.amount?.currency_code || 'USD',
+            status: 'succeeded',
+            raw: payload
+          }])
+        };
+        await retryFetchJson(`${supabaseUrl}/rest/v1/payments`, paymentInsertOptions, 4, 200);
+      } catch (err) {
+        console.error('Error inserting PayPal payment:', err);
+        await sendMonitoringAlert(env, { level: 'error', action: 'insert_paypal_payment', error: String(err), event: payload });
+      }
+
+      // Update order status
+      try {
+        const patchOptions: RequestInit = { method: 'PATCH', headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }, body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() }) };
+        if (orderRef) {
+          await retryFetchJson(`${supabaseUrl}/rest/v1/orders?id=eq.${orderRef}`, patchOptions, 4, 200);
+        } else if (paypalOrderId) {
+          await retryFetchJson(`${supabaseUrl}/rest/v1/orders?paypal_order_id=eq.${encodeURIComponent(paypalOrderId)}`, patchOptions, 4, 200);
+        }
+      } catch (err) {
+        console.error('Failed to update order status after PayPal webhook:', err);
+        await sendMonitoringAlert(env, { level: 'error', action: 'update_order_paypal', error: String(err), paypalOrderId, orderRef });
+      }
+
+      return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+    }
+
+    // acknowledge other events
+    return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+  } catch (err: any) {
+    console.error('PayPal webhook handling error:', err);
+    await sendMonitoringAlert(env, { level: 'error', action: 'paypal_webhook_error', error: String(err) });
+    return new Response(JSON.stringify({ error: 'Webhook handling error' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+  }
+}
+
+// ----------------- End PayPal handlers -----------------

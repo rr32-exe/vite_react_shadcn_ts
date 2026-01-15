@@ -1,0 +1,17 @@
+name = "vite_react_shadcn_ts"
+main = "workers/worker.ts"
+compatibility_date = "2026-01-15"
+workers_dev = true
+
+# Set your Cloudflare account ID here to avoid interactive prompts in CI:
+# account_id = "<YOUR_ACCOUNT_ID>"
+
+[build]
+  command = "npm run build"
+
+[assets]
+  directory = "./dist"
+
+# This top-level `wrangler.toml` makes `npx wrangler publish` work from the repo root
+# and uploads the `dist/` directory as worker assets (so the static site and worker are published together).
+# If you prefer to publish the Worker only, remove or comment out the `[assets]` block.

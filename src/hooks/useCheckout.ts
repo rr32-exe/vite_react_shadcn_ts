@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
 
 interface CheckoutData {
   serviceId: string;
@@ -10,9 +9,9 @@ interface CheckoutData {
 
 interface CheckoutResponse {
   success: boolean;
-  sessionId?: string;
-  sessionUrl?: string;
   orderId?: string;
+  paypalOrderId?: string;
+  approveUrl?: string;
   depositAmount?: number;
   totalAmount?: number;
   currency?: string;
@@ -34,27 +33,39 @@ export const useCheckout = (): UseCheckoutReturn => {
     setError(null);
 
     try {
-      const { data: responseData, error: fnError } = await supabase.functions.invoke('create-checkout', {
-        body: {
-          ...data,
-          successUrl: `${window.location.origin}/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      
+      const response = await fetch(`${apiUrl}/api/create-paypal-order`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          serviceId: data.serviceId,
+          customerName: data.customerName,
+          customerEmail: data.customerEmail,
+          notes: data.notes,
+          successUrl: `${window.location.origin}/?payment=success`,
           cancelUrl: `${window.location.origin}/?payment=cancelled`
-        }
+        })
       });
 
-      if (fnError) {
-        setError(fnError.message || 'Failed to create checkout');
+      if (!response.ok) {
+        const errorData = await response.json();
+        setError(errorData.error || 'Failed to create PayPal order');
         return null;
       }
+
+      const responseData = await response.json();
 
       if (responseData?.error) {
         setError(responseData.error);
         return null;
       }
 
-      // Redirect to Paystack hosted payment page
-      if (responseData?.sessionUrl) {
-        window.location.href = responseData.sessionUrl;
+      // Redirect to PayPal approval page
+      if (responseData?.approveUrl) {
+        window.location.href = responseData.approveUrl;
       }
 
       return responseData;
