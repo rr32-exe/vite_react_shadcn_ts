@@ -160,6 +160,16 @@ async function run() {
       } catch (err) {
         console.error('Failed to run SQL automatically. Please run `workers/sql/schema.sql` in Supabase SQL editor manually. Error:', err.message || err);
       }
+
+      const runApplyWorkflow = await yesNoPrompt('Would you like to also dispatch the GitHub "Apply DB Schema" workflow (requires `gh` CLI and repository secret DATABASE_URL)?', false);
+      if (runApplyWorkflow) {
+        try {
+          await runCmd('gh', ['workflow', 'run', 'apply-schema.yml']);
+          console.log('Dispatched apply-schema workflow. View it in the Actions tab.');
+        } catch (err) {
+          console.error('Failed to dispatch apply-schema workflow via gh. Ensure `gh` is installed and authenticated with repo access.', err.message || err);
+        }
+      }
     }
   }
 

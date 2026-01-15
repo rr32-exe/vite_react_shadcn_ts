@@ -1,0 +1,31 @@
+name: Apply DB Schema
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: Apply SQL schema to DATABASE_URL
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install psql client
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Apply schema
+        run: |
+          # Support either DATABASE_URL or SUPABASE_URL repository secrets for convenience.
+          DB_URL="${{ secrets.DATABASE_URL }}"
+          if [ -z "$DB_URL" ]; then DB_URL="${{ secrets.SUPABASE_URL }}"; fi
+          if [ -z "$DB_URL" ]; then echo "DATABASE_URL or SUPABASE_URL repository secret is required"; exit 1; fi
+          echo "Applying workers/sql/schema.sql to database"
+          psql "$DB_URL" -f workers/sql/schema.sql
+
+      - name: Done
+        run: echo "Schema applied successfully (or errors printed above)."

@@ -28,6 +28,8 @@ Quick steps to go live:
    - Add `SUPABASE_URL` as a var in `wrangler.toml` or via the Cloudflare dashboard
    - Optionally set `PAYSTACK_MODE` to `test` or `live` in `workers/wrangler.toml` or as a var
 3. Verify the database schema in `workers/sql/schema.sql` (run it in Supabase SQL editor)
+   - You can apply the schema locally using psql: `psql "$DATABASE_URL" -f workers/sql/schema.sql` (requires `psql` client).
+   - Or dispatch the included GitHub Action to apply the schema: Actions → "Apply DB Schema" (requires `DATABASE_URL` repo secret).
 4. Preview locally: `wrangler dev`
 5. Publish: `npm run deploy:workers` (or `wrangler publish --account-id <ACCOUNT_ID>`)
 
