@@ -49,6 +49,14 @@ jobs:
           # Assumes account ID is provided as secret. This publishes to workers.dev.
           wrangler publish --account-id ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      - name: Smoke test deployed Worker
+        if: ${{ secrets.CF_WORKER_URL != '' }}
+        run: |
+          echo "Checking ${{ secrets.CF_WORKER_URL }}/api/status"
+          curl -fsS "${{ secrets.CF_WORKER_URL }}/api/status" -o status.json
+          cat status.json
+          node -e "const fs=require('fs'); const st=JSON.parse(fs.readFileSync('status.json','utf8')); if(!st.ok){console.error('status.ok is false'); process.exit(1);} if(st.paystack?.mode!=='test'){console.error('Paystack mode is not test:', st.paystack?.mode); process.exit(2);} console.log('Smoke test passed');"
+
       - name: Create Sentry release & upload sourcemaps (optional)
         if: env.SENTRY_AUTH_TOKEN != ''
         run: |

@@ -43,6 +43,8 @@ workers_dev = true
 # Optional env name for Sentry
 # WORKER_ENV = "production"
 # SENTRY_RELEASE = ""
+# Optional: explicitly set paystack mode to 'test' or 'live' in production.
+# PAYSTACK_MODE = "test"  # or "live"
 
 # KV namespaces (for storing transient OAuth state / allowlist etc.)
 [[kv_namespaces]]
