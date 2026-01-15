@@ -42,12 +42,19 @@ jobs:
         run: |
           set -e
           echo "Creating PayPal webhook for $WEBHOOK_URL (mode=$PAYPAL_MODE)..."
-          OUTPUT=$(node scripts/create-paypal-webhook.js --ci 2>&1 || true)
+          OUTPUT=$(node scripts/create-paypal-webhook.js --ci --simulate 2>&1 || true)
           echo "$OUTPUT"
-          # The helper emits a final JSON line when run under --ci with { "webhookId": "..." }
+          # The helper emits a final JSON line when run under --ci with { "webhookId": "...", "simulateResult": {...} }
           WEBHOOK_ID=$(echo "$OUTPUT" | jq -r 'select(.webhookId) .webhookId' 2>/dev/null || true)
           if [ -z "$WEBHOOK_ID" ] || [ "$WEBHOOK_ID" = "null" ]; then
             echo "Failed to extract webhook id from helper output."; exit 1
+          fi
+          SIM_OK=$(echo "$OUTPUT" | jq -r 'select(.simulateResult) .simulateResult.ok' 2>/dev/null || true)
+          if [ "$SIM_OK" != "true" ]; then
+            echo "Webhook simulation failed or returned non-OK: $SIM_OK";
+            echo "Simulation body:";
+            echo "$OUTPUT" | jq -r 'select(.simulateResult) .simulateResult.body' 2>/dev/null || true
+            exit 1
           fi
           echo "webhook_id=$WEBHOOK_ID" >> $GITHUB_OUTPUT
 
@@ -59,6 +66,18 @@ jobs:
           echo "Found webhook id ${{ steps.create.outputs.webhook_id }}; storing as PAYPAL_WEBHOOK_ID via wrangler..."
           npm install -g wrangler
           printf "%s" "${{ steps.create.outputs.webhook_id }}" | wrangler secret put PAYPAL_WEBHOOK_ID --raw --config ./wrangler.toml
+
+      - name: Simulate webhook delivery (post-store)
+        if: ${{ secrets.PAYPAL_CLIENT_ID != '' && secrets.PAYPAL_SECRET != '' }}
+        env:
+          PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
+          PAYPAL_SECRET: ${{ secrets.PAYPAL_SECRET }}
+          PAYPAL_MODE: ${{ github.event.inputs.mode || 'sandbox' }}
+          WEBHOOK_ID: ${{ steps.create.outputs.webhook_id }}
+          WEBHOOK_URL: ${{ secrets.CF_WORKER_URL }}
+        run: |
+          echo "Simulating webhook delivery to ${WEBHOOK_URL} for webhook ${WEBHOOK_ID}"
+          node -e "(async ()=>{ try{ const client=process.env.PAYPAL_CLIENT_ID; const secret=process.env.PAYPAL_SECRET; const base=(process.env.PAYPAL_MODE==='live')?'https://api.paypal.com':'https://api.sandbox.paypal.com'; const creds=Buffer.from(client+':'+secret).toString('base64'); const tokenResp=await fetch(base+'/v1/oauth2/token',{method:'POST',headers:{Authorization:'Basic '+creds,'Content-Type':'application/x-www-form-urlencoded'},body:'grant_type=client_credentials'}); const tokenJson=await tokenResp.json(); if(!tokenResp.ok){ console.error('Failed to get access token',tokenJson); process.exit(1);} const token=tokenJson.access_token; const body={webhook_id:process.env.WEBHOOK_ID,event_type:'PAYMENT.CAPTURE.COMPLETED',resource:{id:'sim_poststore_'+Date.now(),status:'COMPLETED',amount:{currency_code:'USD',value':'1.00'},links:[{href:process.env.WEBHOOK_URL}]}}; const resp=await fetch(base+'/v1/notifications/simulate-event',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)}); const j=await resp.json().catch(()=>null); console.log('simulate response',resp.status,JSON.stringify(j)); if(!resp.ok){ console.error('Simulation failed'); process.exit(1);} console.log('Simulation posted successfully'); }catch(e){ console.error(e); process.exit(1);} })()"
 
       - name: Done
         run: |

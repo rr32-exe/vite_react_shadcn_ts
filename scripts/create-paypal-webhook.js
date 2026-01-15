@@ -46,6 +46,27 @@ async function createWebhook(token, base, webhookUrl) {
   return respBody;
 }
 
+async function simulateEvent(token, base, webhookId, webhookUrl) {
+  // Try to use PayPal simulate-event endpoint (sandbox & live)
+  const body = {
+    webhook_id: webhookId,
+    event_type: 'PAYMENT.CAPTURE.COMPLETED',
+    resource: {
+      id: `sim_${Date.now()}`,
+      amount: { currency_code: 'USD', value: '1.00' },
+      status: 'COMPLETED',
+      links: [{ href: webhookUrl }]
+    }
+  };
+  const resp = await fetch(`${base}/v1/notifications/simulate-event`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const respBody = await resp.json().catch(() => null);
+  return { ok: resp.ok, status: resp.status, body: respBody };
+}
+
 async function run() {
   const clientId = process.env.PAYPAL_CLIENT_ID;
   const secret = process.env.PAYPAL_SECRET;

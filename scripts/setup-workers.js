@@ -176,6 +176,30 @@ async function run() {
     }
   }
 
+  // Optionally dispatch the GitHub workflow to provision PayPal webhook
+  const runProvision = await yesNoPrompt('Run the GitHub workflow to provision PayPal webhook now via `gh` CLI (manual workflow)?', false);
+  if (runProvision) {
+    try {
+      await runCmd('gh', ['workflow', 'run', 'provision-paypal-webhook.yml', '-f', `mode=${paypalMode || 'sandbox'}`]);
+      console.log('Workflow dispatched. You can view it in the Actions tab.');
+    } catch (err) {
+      console.error('Failed to dispatch workflow via gh. Ensure `gh` is installed and authenticated with repo access.', err.message || err);
+    }
+
+    const watch = await yesNoPrompt('Watch the workflow run to completion using `gh run watch`? (requires gh)', false);
+    if (watch) {
+      try {
+        await runCmd('gh', ['run', 'watch', '--exit-status']);
+        console.log('Workflow run completed.');
+      } catch (err) {
+        console.error('Error watching workflow run:', err.message || err);
+        console.log('Check the Actions tab for details.');
+      }
+    } else {
+      console.log('You can monitor the run in GitHub Actions or run `gh run list --workflow=provision-paypal-webhook.yml` to see recent runs.');
+    }
+  }
+
   console.log('\nDone. Please verify the endpoints with `wrangler dev` and the curl examples in workers/README.md');
   rl.close();
 }
