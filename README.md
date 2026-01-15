@@ -34,6 +34,14 @@ Quick steps to go live:
 CI smoke test:
 - The GitHub Action will attempt a post-deploy smoke test against `${{ secrets.CF_WORKER_URL }}/api/status` and expects `paystack.mode` to be `test` to pass. Set `CF_WORKER_URL` (e.g. `https://<your-subdomain>.workers.dev`) in repository secrets to enable this check.
 
+Creating PayPal webhook (helper):
+- A helper script is available at `scripts/create-paypal-webhook.js`. It uses `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET`, `PAYPAL_MODE` (sandbox|live) and `WEBHOOK_URL` (or `CF_WORKER_URL`) environment variables.
+- Example (sandbox):
+
+  PAYPAL_CLIENT_ID=your_client_id PAYPAL_SECRET=your_secret PAYPAL_MODE=sandbox WEBHOOK_URL=https://<your-subdomain>.workers.dev/api/paypal-webhook npm run create:paypal-webhook
+
+- The script prints the created webhook response and a command to set the returned webhook id as a Wrangler secret: `printf "%s" "<webhook-id>" | wrangler secret put PAYPAL_WEBHOOK_ID --raw`
+
 You can run the interactive installer to set all secrets and optionally publish: `npm run setup:workers`.
 
 See `workers/README.md` for more details on testing webhooks and CI deployment.
