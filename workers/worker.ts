@@ -88,6 +88,10 @@ export default {
         return handleNewsletterSubscribe(request, env);
       }
 
+      if (url.pathname === '/api/status' && request.method === 'GET') {
+        return handleStatus(request, env);
+      }
+
       if (url.pathname === '/api/paystack-webhook' && request.method === 'POST') {
         return handlePaystackWebhook(request, env);
       }
@@ -328,6 +332,15 @@ async function handleNewsletterSubscribe(request: Request, env: any) {
 
   const data = (await resp.json())[0];
   return jsonResponse({ success: true, message: 'Successfully subscribed!', data });
+}
+
+// Lightweight status endpoint for smoke tests and quick checks
+async function handleStatus(request: Request, env: any) {
+  const paystackConfigured = Boolean(env.PAYSTACK_SECRET_KEY);
+  const paystackWebhookConfigured = Boolean(env.PAYSTACK_WEBHOOK_SECRET);
+  const supabaseConfigured = Boolean(env.SUPABASE_SERVICE_ROLE_KEY && env.SUPABASE_URL);
+  const paystackMode = env.PAYSTACK_MODE || (paystackConfigured ? 'unknown' : 'unset');
+  return jsonResponse({ ok: true, paystack: { configured: paystackConfigured, webhookConfigured: paystackWebhookConfigured, mode: paystackMode }, supabase: { configured: supabaseConfigured }, env: { worker_env: env.WORKER_ENV || null } });
 }
 
 /* --- Utility: retry + monitoring --- */
