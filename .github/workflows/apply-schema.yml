@@ -24,6 +24,13 @@ jobs:
           DB_URL="${{ secrets.DATABASE_URL }}"
           if [ -z "$DB_URL" ]; then DB_URL="${{ secrets.SUPABASE_URL }}"; fi
           if [ -z "$DB_URL" ]; then echo "DATABASE_URL or SUPABASE_URL repository secret is required"; exit 1; fi
+          # Validate the DB URL looks like a Postgres connection string (postgres:// or postgresql://)
+          if ! printf "%s" "$DB_URL" | grep -Eq '^postgres(ql)?://'; then
+            echo "The provided DATABASE_URL/SUPABASE_URL does not look like a Postgres connection string."
+            echo "If you're using Supabase, use the connection string from Project → Settings → Database → 'Connection string' (postgres://...), not the HTTPS project URL."
+            echo "Value (truncated): ${DB_URL:0:80}..."
+            exit 1
+          fi
           echo "Applying workers/sql/schema.sql to database"
           psql "$DB_URL" -f workers/sql/schema.sql
 
