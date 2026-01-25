@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Ensure you set these GitHub secrets in repo settings
-      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       # Mapped secrets for steps to use as env vars (keeps usages consistent)
       PAYSTACK_SECRET_KEY: ${{ secrets.PAYSTACK_SECRET_KEY }}
@@ -44,6 +44,8 @@ jobs:
           echo "Add your migration command here"
       
       - name: Set Wrangler secrets from repo secrets (non-interactive)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
           # Using echo with pipe instead of printf for better compatibility
           echo "$PAYSTACK_SECRET_KEY" | wrangler secret put PAYSTACK_SECRET_KEY || true
@@ -56,6 +58,8 @@ jobs:
         run: npm run build
       
       - name: Publish Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: wrangler deploy
       
       - name: Create Sentry release & upload sourcemaps
