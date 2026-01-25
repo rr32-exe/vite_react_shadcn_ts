@@ -1,10 +1,8 @@
 name: Deploy Cloudflare Worker
-
 on:
   push:
     branches:
       - main
-
 jobs:
   publish:
     name: Publish Worker
@@ -24,44 +22,54 @@ jobs:
       SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
     steps:
       - uses: actions/checkout@v4
-
+      
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
+      
+      - name: Install dependencies
+        run: npm ci
+      
       - name: Install wrangler
         run: npm install -g wrangler
-
+      
+      - name: Run database migrations
+        if: env.SUPABASE_URL != '' && env.SUPABASE_SERVICE_ROLE_KEY != ''
+        run: |
+          # Install Supabase CLI if you have migrations
+          npm install -g supabase
+          # Run migrations (adjust path if needed)
+          # supabase db push --db-url $SUPABASE_URL
+          echo "Add your migration command here"
+      
       - name: Set Wrangler secrets from repo secrets (non-interactive)
         run: |
-          # Ensure wrangler supports --raw; this echoes secret values into wrangler.
-          if [ -n "${PAYSTACK_SECRET_KEY}" ]; then printf "%s" "${PAYSTACK_SECRET_KEY}" | wrangler secret put PAYSTACK_SECRET_KEY --raw || true; fi
-          if [ -n "${SUPABASE_SERVICE_ROLE_KEY}" ]; then printf "%s" "${SUPABASE_SERVICE_ROLE_KEY}" | wrangler secret put SUPABASE_SERVICE_ROLE_KEY --raw || true; fi
-          if [ -n "${PAYSTACK_WEBHOOK_SECRET}" ]; then printf "%s" "${PAYSTACK_WEBHOOK_SECRET}" | wrangler secret put PAYSTACK_WEBHOOK_SECRET --raw || true; fi
-          if [ -n "${ADMIN_SECRET}" ]; then printf "%s" "${ADMIN_SECRET}" | wrangler secret put ADMIN_SECRET --raw || true; fi
-          if [ -n "${SUPABASE_URL}" ]; then printf "%s" "${SUPABASE_URL}" | wrangler secret put SUPABASE_URL --raw || true; fi
-
+          # Using echo with pipe instead of printf for better compatibility
+          echo "$PAYSTACK_SECRET_KEY" | wrangler secret put PAYSTACK_SECRET_KEY || true
+          echo "$SUPABASE_SERVICE_ROLE_KEY" | wrangler secret put SUPABASE_SERVICE_ROLE_KEY || true
+          echo "$PAYSTACK_WEBHOOK_SECRET" | wrangler secret put PAYSTACK_WEBHOOK_SECRET || true
+          echo "$ADMIN_SECRET" | wrangler secret put ADMIN_SECRET || true
+          echo "$SUPABASE_URL" | wrangler secret put SUPABASE_URL || true
+      
+      - name: Build project
+        run: npm run build
+      
       - name: Publish Worker
-        env:
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-        run: |
-          # Assumes account ID is provided as secret. This publishes to workers.dev.
-          wrangler publish --account-id ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-
-      - name: Create Sentry release & upload sourcemaps (optional)
+        run: wrangler deploy
+      
+      - name: Create Sentry release & upload sourcemaps
         if: env.SENTRY_AUTH_TOKEN != ''
+        env:
+          SENTRY_RELEASE: ${{ github.sha }}
         run: |
-          npm ci
-          npm run build
           npm i -g @sentry/cli
           sentry-cli releases new $SENTRY_RELEASE -o $SENTRY_ORG -p $SENTRY_PROJECT
           sentry-cli releases set-commits --auto $SENTRY_RELEASE
-          # Upload sourcemaps for Vite build output
+          # Upload sourcemaps for build output
           sentry-cli releases files $SENTRY_RELEASE upload-sourcemaps dist --url-prefix '~/'
           sentry-cli releases finalize $SENTRY_RELEASE
 
 # Notes:
 # - Store CF_API_TOKEN and CLOUDFLARE_ACCOUNT_ID as repository secrets.
 # - Do NOT store service role keys in repository secrets unless you understand the security implications.
-add db migration
