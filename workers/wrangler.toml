@@ -9,8 +9,8 @@ workers_dev = true
 # Example of adding a route (if you want to bind worker to a route on your domain):
 # route = "example.com/api/*"
 
-[build]
-  command = ""
+#[build]
+#  command = ""
 
 # NOTE: We recommend using `wrangler secret put` to set the PAYSTACK key and SUPABASE keys.
 # For example:
