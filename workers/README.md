@@ -80,6 +80,21 @@ This Worker includes a `/api/paystack-webhook` POST endpoint that verifies Payst
 - Configure Paystack to send webhooks to `https://<your-subdomain>.workers.dev/api/paystack-webhook`
 - For local testing, generate a test transaction in the Paystack dashboard or use a webhook test tool to POST a sample `charge.success` event to the webhook endpoint.
 
+### Yoco (VaughnSterling)
+
+Vaughn Sterling uses Yoco for payments by default. This Worker provides:
+
+- `POST /api/create-yoco-charge` — creates an `orders` row and requests a Yoco charge/checkout session. Requires `YOCO_API_URL` and `YOCO_SECRET_KEY` to be set in worker env.
+- `POST /api/yoco-webhook` — optional webhook endpoint to receive Yoco payment events. Set `YOCO_WEBHOOK_SECRET` to validate incoming webhooks if your Yoco account signs webhooks.
+
+Setup:
+- Add `YOCO_API_URL`, `YOCO_SECRET_KEY`, and `YOCO_WEBHOOK_SECRET` (if used) via `wrangler secret put` or in the Cloudflare dashboard.
+- Configure the Yoco webhook to point at `https://<your-subdomain>.workers.dev/api/yoco-webhook`.
+
+Notes:
+- Yoco's API shapes vary; this integration attempts a best-effort generic flow and returns the charge ID and a `checkoutUrl` if provided by the API. If your Yoco account uses a different endpoint or payload, set `YOCO_API_URL` accordingly and adjust the worker code to match your provider's response format.
+- The DB schema includes `yoco_charge_id` and `yoco_transaction_id` fields; you'll need to run the Apply DB Schema workflow after setting your `DATABASE_URL`.
+
 ### Admin endpoints (read-only)
 
 A secure admin interface is available under `/api/admin/*` and requires the `ADMIN_SECRET` secret (send as `Authorization: Bearer <ADMIN_SECRET>` or `x-admin-secret` header):

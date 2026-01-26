@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS public.orders (
   stripe_session_id text,
   paystack_reference text,
   paypal_order_id text,
+  yoco_charge_id text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -24,6 +25,7 @@ CREATE INDEX IF NOT EXISTS idx_orders_customer_email ON public.orders (customer_
 CREATE INDEX IF NOT EXISTS idx_orders_stripe_session_id ON public.orders (stripe_session_id);
 CREATE INDEX IF NOT EXISTS idx_orders_paystack_reference ON public.orders (paystack_reference);
 CREATE INDEX IF NOT EXISTS idx_orders_paypal_order_id ON public.orders (paypal_order_id);
+CREATE INDEX IF NOT EXISTS idx_orders_yoco_charge_id ON public.orders (yoco_charge_id);
 
 -- 2) payments table to record Stripe payments
 CREATE TABLE IF NOT EXISTS public.payments (
@@ -36,6 +38,8 @@ CREATE TABLE IF NOT EXISTS public.payments (
   paystack_transaction_id text,
   paypal_order_id text,
   paypal_transaction_id text,
+  yoco_charge_id text,
+  yoco_transaction_id text,
   amount integer NOT NULL, -- in cents
   currency text NOT NULL,
   status text NOT NULL,
@@ -51,6 +55,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_paystack_reference ON public.payme
 CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_paystack_transaction_id ON public.payments (paystack_transaction_id);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_paypal_order_id ON public.payments (paypal_order_id);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_paypal_transaction_id ON public.payments (paypal_transaction_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_yoco_charge_id ON public.payments (yoco_charge_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_yoco_transaction_id ON public.payments (yoco_transaction_id);
 -- 3) contact_submissions
 CREATE TABLE IF NOT EXISTS public.contact_submissions (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

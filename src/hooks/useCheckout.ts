@@ -5,6 +5,8 @@ interface CheckoutData {
   customerName: string;
   customerEmail: string;
   notes?: string;
+  site?: string; // e.g., 'vaughnsterling'
+  provider?: 'paypal' | 'yoco' | 'paystack' | 'stripe'; // optional provider override
 }
 
 interface CheckoutResponse {
@@ -35,7 +37,11 @@ export const useCheckout = (): UseCheckoutReturn => {
     try {
       const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
       
-      const response = await fetch(`${apiUrl}/api/create-paypal-order`, {
+      // Choose endpoint based on requested provider (default: PayPal)
+      const provider = data.provider || 'paypal';
+      const endpoint = provider === 'yoco' ? '/api/create-yoco-charge' : '/api/create-paypal-order';
+
+      const response = await fetch(`${apiUrl}${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -45,6 +51,7 @@ export const useCheckout = (): UseCheckoutReturn => {
           customerName: data.customerName,
           customerEmail: data.customerEmail,
           notes: data.notes,
+          site: data.site,
           successUrl: `${window.location.origin}/?payment=success`,
           cancelUrl: `${window.location.origin}/?payment=cancelled`
         })

@@ -118,8 +118,7 @@ export default function AdminPage() {
                     <th className="border p-2">Service</th>
                     <th className="border p-2">Total</th>
                     <th className="border p-2">Status</th>
-                    <th className="border p-2">Paystack Ref</th>
-                    <th className="border p-2">Created</th>
+                    <th className="border p-2">Paystack Ref</th>                      <th className="border p-2">Yoco Charge</th>                    <th className="border p-2">Created</th>
                   </>
                 ) : (
                   <>
@@ -129,6 +128,7 @@ export default function AdminPage() {
                     <th className="border p-2">Currency</th>
                     <th className="border p-2">Status</th>
                     <th className="border p-2">Paystack Ref</th>
+                    <th className="border p-2">Yoco Charge</th>
                     <th className="border p-2">Transaction ID</th>
                     <th className="border p-2">Created</th>
                   </>
@@ -150,6 +150,7 @@ export default function AdminPage() {
                       <td className="border p-2">{(row.total_amount/100).toFixed(2)} {row.currency}</td>
                       <td className="border p-2">{row.status}</td>
                       <td className="border p-2">{row.paystack_reference ?? ''}</td>
+                      <td className="border p-2">{row.yoco_charge_id ?? ''}</td>
                       <td className="border p-2">{new Date(row.created_at).toLocaleString()}</td>
                     </>
                   ) : (
@@ -160,7 +161,8 @@ export default function AdminPage() {
                       <td className="border p-2">{row.currency}</td>
                       <td className="border p-2">{row.status}</td>
                       <td className="border p-2">{row.paystack_reference ?? ''}</td>
-                      <td className="border p-2">{row.paystack_transaction_id ?? ''}</td>
+                      <td className="border p-2">{row.yoco_charge_id ?? ''}</td>
+                      <td className="border p-2">{row.yoco_transaction_id ?? row.paystack_transaction_id ?? ''}</td>
                       <td className="border p-2">{new Date(row.created_at).toLocaleString()}</td>
                     </>
                   )}

@@ -45,7 +45,9 @@ const VaughnSterling: React.FC = () => {
       serviceId: selectedService.id,
       customerName: checkoutForm.name,
       customerEmail: checkoutForm.email,
-      notes: checkoutForm.notes
+      notes: checkoutForm.notes,
+      site: 'vaughnsterling',
+      provider: 'yoco' // use Yoco for VaughnSterling payments
     });
   };
 

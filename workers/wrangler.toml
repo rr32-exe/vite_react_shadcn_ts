@@ -45,6 +45,11 @@ workers_dev = true
 # SENTRY_RELEASE = ""
 # Optional: explicitly set paystack mode to 'test' or 'live' in production.
 # PAYSTACK_MODE = "test"  # or "live"
+# Yoco payment gateway (for VaughnSterling)
+# YOCO_API_URL = "https://online.yoco.com"  # or your enterprise endpoint
+# YOCO_SECRET_KEY = "sk_live_..."
+# YOCO_WEBHOOK_SECRET = "<webhook-secret>"  # used to validate webhooks
+# YOCO_MODE = "test" # or "live"
 
 # KV namespaces (for storing transient OAuth state / allowlist etc.)
 [[kv_namespaces]]

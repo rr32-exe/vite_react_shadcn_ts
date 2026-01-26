@@ -100,8 +100,17 @@ export default {
         return handlePayPalWebhook(request, env);
       }
 
+      if (url.pathname === '/api/yoco-webhook' && request.method === 'POST') {
+        return handleYocoWebhook(request, env);
+      }
+
       if (url.pathname === '/api/create-paypal-order' && request.method === 'POST') {
         return handleCreatePayPalOrder(request, env);
+      }
+
+      // Yoco flow (VaughnSterling payments)
+      if (url.pathname === '/api/create-yoco-charge' && request.method === 'POST') {
+        return handleCreateYocoCharge(request, env);
       }
 
       if (url.pathname === '/api/admin/login' && request.method === 'POST') {
@@ -1033,3 +1042,173 @@ async function handlePayPalWebhook(request: Request, env: any) {
 }
 
 // ----------------- End PayPal handlers -----------------
+
+// ----------------- Yoco (VaughnSterling) handlers -----------------
+
+async function handleCreateYocoCharge(request: Request, env: any) {
+  const supabaseUrl = env.SUPABASE_URL;
+  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !supabaseKey) return jsonResponse({ error: 'Supabase not configured' }, 500);
+
+  const payload = await request.json();
+  const { serviceId, customerName, customerEmail, successUrl, cancelUrl } = payload;
+  if (!serviceId || !customerName || !customerEmail) return jsonResponse({ error: 'Service ID, customer name, and email are required' }, 400);
+  const service = services[serviceId];
+  if (!service) return jsonResponse({ error: 'Invalid service ID' }, 400);
+
+  // Create order row in Supabase
+  const totalAmountCents = Math.round(service.price * 100);
+  const depositAmountCents = Math.round(totalAmountCents / 2);
+  const orderResp = await fetch(`${supabaseUrl}/rest/v1/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Prefer: 'return=representation' },
+    body: JSON.stringify([{
+      customer_name: customerName,
+      customer_email: customerEmail.toLowerCase(),
+      service_id: serviceId,
+      service_name: service.name,
+      total_amount: totalAmountCents,
+      deposit_amount: depositAmountCents,
+      currency: service.currency,
+      notes: payload.notes || null,
+      status: 'pending'
+    }])
+  });
+  if (!orderResp.ok) {
+    const errText = await orderResp.text();
+    console.error('Order creation failed (Yoco flow):', errText);
+    return jsonResponse({ error: 'Failed to create order' }, 500);
+  }
+  const order = (await orderResp.json())[0];
+
+  // Call Yoco API to create a charge/checkout session
+  const yocoApi = env.YOCO_API_URL || env.YOCO_API_BASE || null;
+  const yocoKey = env.YOCO_SECRET_KEY;
+  if (!yocoApi || !yocoKey) return jsonResponse({ error: 'Yoco not configured' }, 500);
+
+  try {
+    // NOTE: Yoco API shapes vary; this code attempts a best-effort integration.
+    // Set your YOCO_API_URL and YOCO_SECRET_KEY in worker env to make this work.
+    const createResp = await fetch(`${yocoApi.replace(/\/$/, '')}/v1/charges`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${yocoKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        amount_in_cents: depositAmountCents,
+        currency: service.currency,
+        reference: String(order.id),
+        customer: { name: customerName, email: customerEmail.toLowerCase() },
+        callback_url: successUrl || `${request.headers.get('origin')}/payment-success`,
+        cancel_url: cancelUrl || `${request.headers.get('origin')}/payment-cancel`
+      })
+    });
+
+    const initBody = await createResp.json();
+    if (!createResp.ok) {
+      console.error('Yoco create charge error:', initBody);
+      return jsonResponse({ error: initBody.message || 'Failed to create Yoco charge' }, 500);
+    }
+
+    // Heuristic: find charge id and redirect url in response
+    const yocoChargeId = initBody.id || initBody.charge_id || initBody.data?.id || null;
+    const checkoutUrl = initBody.checkout_url || initBody.redirect_url || initBody.data?.checkout_url || initBody.data?.redirect_url || null;
+
+    // Update order with yoco_charge_id
+    try {
+      await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+        body: JSON.stringify({ yoco_charge_id: yocoChargeId })
+      });
+    } catch (err) {
+      console.error('Failed to update order with yoco charge id:', err);
+    }
+
+    return jsonResponse({ orderId: order.id, yocoChargeId: yocoChargeId, checkoutUrl });
+  } catch (err: any) {
+    console.error('Yoco create charge error:', err);
+    return jsonResponse({ error: String(err) }, 500);
+  }
+}
+
+async function handleYocoWebhook(request: Request, env: any) {
+  // Minimal Yoco webhook handler: parse payload, validate signature if YOCO_WEBHOOK_SECRET set, then insert payment and update order status
+  const payloadText = await request.text();
+  let payload: any;
+  try { payload = JSON.parse(payloadText); } catch (e) { console.error('Invalid Yoco JSON payload', e); return new Response(JSON.stringify({ error: 'Invalid payload' }), { status: 400, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } }); }
+
+  const supabaseUrl = env.SUPABASE_URL;
+  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Supabase not configured (Yoco webhook)');
+    return new Response(JSON.stringify({ error: 'Supabase not configured' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+  }
+
+  try {
+    // Extract useful fields (best-effort)
+    const eventType = payload.event || payload.type || null;
+    const data = payload.data || payload;
+    const yocoChargeId = data.id || data.charge_id || null;
+    const yocoTransactionId = data.transaction_id || data.id || null;
+    const amount = data.amount_in_cents || data.amount || null;
+    const orderRef = data.reference || data.meta && data.meta.reference || null;
+
+    // Simple idempotency check
+    if (yocoChargeId) {
+      const existsResp = await fetch(`${supabaseUrl}/rest/v1/payments?yoco_charge_id=eq.${encodeURIComponent(yocoChargeId)}`, { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } });
+      if (existsResp.ok) {
+        const rows = await existsResp.json();
+        if (rows && rows.length > 0) {
+          console.log('Payment already recorded for Yoco charge', yocoChargeId);
+          return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+        }
+      }
+    }
+
+    // Insert payment record
+    try {
+      const paymentInsertOptions: RequestInit = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Prefer: 'return=representation' },
+        body: JSON.stringify([{
+          order_id: orderRef ? Number(orderRef) : null,
+          yoco_charge_id: yocoChargeId,
+          yoco_transaction_id: yocoTransactionId,
+          amount: amount || 0,
+          currency: data.currency || 'ZAR',
+          status: 'succeeded',
+          raw: payload
+        }])
+      };
+      await retryFetchJson(`${supabaseUrl}/rest/v1/payments`, paymentInsertOptions, 4, 200);
+    } catch (err) {
+      console.error('Error inserting Yoco payment:', err);
+      await sendMonitoringAlert(env, { level: 'error', action: 'insert_yoco_payment', error: String(err), event: payload });
+    }
+
+    // Update order status to paid if possible
+    try {
+      const patchOptions: RequestInit = { method: 'PATCH', headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }, body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() }) };
+      if (orderRef) {
+        await retryFetchJson(`${supabaseUrl}/rest/v1/orders?id=eq.${orderRef}`, patchOptions, 4, 200);
+      } else if (yocoChargeId) {
+        await retryFetchJson(`${supabaseUrl}/rest/v1/orders?yoco_charge_id=eq.${encodeURIComponent(yocoChargeId)}`, patchOptions, 4, 200);
+      }
+    } catch (err) {
+      console.error('Failed to update order status after Yoco webhook:', err);
+      await sendMonitoringAlert(env, { level: 'error', action: 'update_order_yoco', error: String(err), yocoChargeId, orderRef });
+    }
+
+    return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+  } catch (err: any) {
+    console.error('Yoco webhook handling error:', err);
+    await sendMonitoringAlert(env, { level: 'error', action: 'yoco_webhook_error', error: String(err) });
+    return new Response(JSON.stringify({ error: 'Webhook handling error' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+  }
+}
+
+// Add route for Yoco webhook
+async function yocoWebhookRouter(request: Request, env: any) {
+  const url = new URL(request.url);
+  if (url.pathname === '/api/yoco-webhook' && request.method === 'POST') return handleYocoWebhook(request, env);
+}
+
