@@ -44,11 +44,22 @@ jobs:
           # supabase db push --db-url $SUPABASE_URL
           echo "Add your migration command here"
       
+      - name: Check Cloudflare token presence (debug)
+        run: |
+          if [ -n "${{ secrets.CF_API_TOKEN }}" ] || [ -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "Cloudflare token secret present"
+          else
+            echo "Cloudflare token secret missing"
+            exit 1
+          fi
+
       - name: Set Wrangler secrets from repo secrets (non-interactive)
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           # Using echo with pipe instead of printf for better compatibility
+          # Export token explicitly so wrangler picks it up even in nested shells
+          export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN"
           echo "$PAYSTACK_SECRET_KEY" | wrangler secret put PAYSTACK_SECRET_KEY || true
           echo "$SUPABASE_SERVICE_ROLE_KEY" | wrangler secret put SUPABASE_SERVICE_ROLE_KEY || true
           echo "$PAYSTACK_WEBHOOK_SECRET" | wrangler secret put PAYSTACK_WEBHOOK_SECRET || true
@@ -60,8 +71,10 @@ jobs:
       
       - name: Publish Worker
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-        run: wrangler deploy
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          export CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN"
+          wrangler deploy
       
       - name: Create Sentry release & upload sourcemaps
         if: env.SENTRY_AUTH_TOKEN != ''
