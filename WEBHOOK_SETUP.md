@@ -5,6 +5,7 @@ This guide walks you through setting up and testing YOCO webhooks for real-time 
 ## Overview
 
 The YOCO webhook integration allows your application to receive real-time notifications when:
+
 - A payment is completed
 - A payment fails
 - A refund is processed
@@ -22,14 +23,16 @@ All webhook payloads are signed with SHA256 HMAC for security verification.
 ### Step 1: Get Your Webhook URL
 
 Your webhook URL is:
-```
+
+```url
 https://services-api.YOUR_ACCOUNT_ID.workers.dev/api/yoco-webhook
 ```
 
 Replace `YOUR_ACCOUNT_ID` with your actual Cloudflare account ID.
 
 **Example:**
-```
+
+```url
 https://services-api.a1b2c3d4e5f6g7h8i9j0k1l2.workers.dev/api/yoco-webhook
 ```
 
@@ -48,7 +51,7 @@ https://services-api.a1b2c3d4e5f6g7h8i9j0k1l2.workers.dev/api/yoco-webhook
    - ✅ `payment.failed` (recommended - track failed payments)
    - ✅ `payment.refunded` (optional - handle refunds)
    - ✅ `charge.completed` (optional - additional confirmation)
-   
+
    **Recommended:** Select all events initially, then narrow down based on your needs
 
 4. Click **Create** or **Save**
@@ -74,6 +77,7 @@ wrangler secret put YOCO_WEBHOOK_SECRET
 When prompted, paste the signing secret you copied in Step 4.
 
 Alternatively, via Cloudflare Dashboard:
+
 1. Go to **Workers > services-api > Settings > Secrets**
 2. Click **Add Secret**
 3. Name: `YOCO_WEBHOOK_SECRET`
@@ -89,6 +93,7 @@ curl https://services-api.YOUR_ACCOUNT_ID.workers.dev/api/status
 ```
 
 Look for:
+
 ```json
 {
   "ok": true,
@@ -148,6 +153,7 @@ curl -X POST https://services-api.YOUR_ACCOUNT_ID.workers.dev/api/yoco-webhook \
 ```
 
 Expected response:
+
 ```json
 {
   "received": true
@@ -164,6 +170,7 @@ npm test -- tests/yoco.test.ts
 ```
 
 This verifies:
+
 - ✅ Signature validation works
 - ✅ Valid webhooks are accepted
 - ✅ Invalid signatures are rejected
@@ -207,18 +214,21 @@ Here's what YOCO sends in a payment webhook:
 
 ### Webhook Not Received
 
-**Check 1: URL is correct**
+#### Check 1: URL is correct
+
 ```bash
 # Verify worker is responding
 curl https://services-api.YOUR_ACCOUNT_ID.workers.dev/api/status
 # Should return 200 OK
 ```
 
-**Check 2: YOCO can reach your endpoint**
+#### Check 2: YOCO can reach your endpoint
+
 - YOCO Dashboard > Webhooks > Your webhook > **Attempts** / **Logs**
 - Check if YOCO attempted to send (look for HTTP 200 success)
 
-**Check 3: Firewall/Rate Limiting**
+#### Check 3: Firewall/Rate Limiting
+
 - Cloudflare Workers have a 50 request/second per second per default
 - Check Cloudflare Analytics to see if requests are being blocked
 
@@ -227,9 +237,11 @@ curl https://services-api.YOUR_ACCOUNT_ID.workers.dev/api/status
 **Issue:** Getting `Invalid signature` errors
 
 **Solution:**
+
 1. Verify `YOCO_WEBHOOK_SECRET` is set correctly
 2. Check that YOCO Dashboard shows the same secret
 3. Make sure secret has no extra whitespace:
+
    ```bash
    wrangler secret list  # Verify secret is listed
    ```
@@ -239,28 +251,32 @@ curl https://services-api.YOUR_ACCOUNT_ID.workers.dev/api/status
 **Issue:** Webhook accepted but payment not in database
 
 **Check:**
+
 1. Verify Supabase credentials are correct: `wrangler secret list`
 2. Check that `payments` table exists in Supabase
 3. Check Worker logs for errors:
+
    ```bash
    wrangler tail  # Stream live logs
    ```
 
 ### Test Event Fails
 
-**YOCO Dashboard shows "Failed"**
+#### YOCO Dashboard shows "Failed"
 
 1. Check your webhook URL in YOCO Dashboard
    - Should be: `https://services-api.YOUR_ACCOUNT_ID.workers.dev/api/yoco-webhook`
    - **Common mistake**: Missing `/api/yoco-webhook` path
 
 2. Test the endpoint directly:
+
    ```bash
    curl -v https://services-api.YOUR_ACCOUNT_ID.workers.dev/api/yoco-webhook
    # Should return 400 (no valid signature) not 404
    ```
 
 3. Check Cloudflare Workers logs:
+
    ```bash
    wrangler tail
    ```
@@ -283,6 +299,7 @@ curl https://services-api.YOUR_ACCOUNT_ID.workers.dev/api/status
 When a valid webhook is received, the Worker:
 
 1. **Creates a payment record** in the `payments` table:
+
    ```sql
    INSERT INTO payments (
      order_id,
@@ -296,6 +313,7 @@ When a valid webhook is received, the Worker:
    ```
 
 2. **Updates the order** status to `"paid"`:
+
    ```sql
    UPDATE orders 
    SET status = 'paid', updated_at = NOW()
@@ -333,6 +351,7 @@ When a valid webhook is received, the Worker:
 ---
 
 **Questions?** Check the Worker logs:
+
 ```bash
 wrangler tail --format json
 ```
