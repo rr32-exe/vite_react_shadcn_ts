@@ -4,7 +4,7 @@ compatibility_date = "2026-01-15"
 workers_dev = true
 
 # Set your Cloudflare account ID here to avoid interactive prompts in CI:
-# account_id = "<YOUR_ACCOUNT_ID>"
+ account_id = "0c8043131da0dc9e3071f64210bdc0e0"
 
 [build]
   command = "npm run build"

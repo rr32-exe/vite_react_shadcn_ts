@@ -150,8 +150,6 @@ After deployment, you'll get a URL like: `https://my-project.pages.dev`
    - **Events:** `payment.succeeded`, `payment.failed` (or all events)
 4. Copy the webhook signing secret and set it as `YOCO_WEBHOOK_SECRET` in your Worker
 
-**For detailed webhook setup instructions, see [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md)**
-
 ### Step 4: Verify Deployment
 
 Test your live endpoints:
