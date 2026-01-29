@@ -7,7 +7,7 @@ This Worker exposes three endpoints under `/api/*` that are equivalent to the De
 - POST /api/newsletter-subscribe
 
 Quick overview:
-- Uses Paystack REST API to initialize transactions (no Node-only SDK required).
+- Uses YOCO REST API to initialize transactions (no Node-only SDK required).
 - Uses Supabase REST (PostgREST) and the Service Role key to insert/upsert rows.
 - CORS ready and returns JSON responses.
 
@@ -24,11 +24,14 @@ Quick overview:
 
 3. Add secrets and variables:
 
-   # Paystack secret
-   wrangler secret put PAYSTACK_SECRET_KEY
+   # YOCO secret
+   wrangler secret put YOCO_SECRET_KEY
 
    # Supabase service role key (secret)
    wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+
+   # YOCO webhook secret (optional)
+   wrangler secret put YOCO_WEBHOOK_SECRET
 
    # SUPABASE_URL can be stored as a plain variable (not secret) or set in the dashboard
    # Example (dashboard or `wrangler` UI recommended for url):
@@ -70,16 +73,13 @@ curl -X POST "https://<your-subdomain>.workers.dev/api/newsletter-subscribe" \
 
 - The worker uses Supabase PostgREST endpoints (`/rest/v1/<table>`). Make sure the relevant tables (`orders`, `contact_submissions`, `newsletter_subscribers`) exist and have the columns used in the requests.
 - For `newsletter_subscribe` we use `on_conflict=email,site` to emulate upsert behavior.
-- If you prefer a payments provider SDK for Edge (e.g., Paystack SDK), you can swap the REST call for the SDK (note: some SDKs depend on Node APIs and may need bundling).
+- YOCO API integration uses the REST API directly (no Node-only SDK required).
 
-### Paystack Webhooks
+### Paystack Webhooks (Deprecated)
 
-This Worker includes a `/api/paystack-webhook` POST endpoint that verifies Paystack webhook signatures and records payments in the `payments` table and marks `orders` as `paid` on successful events.
+Paystack webhook support has been deprecated in this project. If you still receive Paystack events, please migrate them to YOCO or add a compatibility handler.
 
-- Add the webhook secret: `wrangler secret put PAYSTACK_WEBHOOK_SECRET`
-- Configure Paystack to send webhooks to `https://<your-subdomain>.workers.dev/api/paystack-webhook`
-- For local testing, generate a test transaction in the Paystack dashboard or use a webhook test tool to POST a sample `charge.success` event to the webhook endpoint.
-
+- To migrate, configure YOCO and use `/api/yoco-webhook` to receive events, and ensure your `payments` table has `yoco_charge_id` and `yoco_transaction_id` columns.
 ### Yoco (VaughnSterling)
 
 Vaughn Sterling uses Yoco for payments by default. This Worker provides:
@@ -100,7 +100,7 @@ Notes:
 A secure admin interface is available under `/api/admin/*` and requires the `ADMIN_SECRET` secret (send as `Authorization: Bearer <ADMIN_SECRET>` or `x-admin-secret` header):
 
 - GET `/api/admin/orders` - optional query `id`, `email`, `limit`
-- GET `/api/admin/payments` - optional query `id`, `stripe_payment_intent`, `paystack_reference`, `paystack_transaction_id`, `limit`
+- GET `/api/admin/payments` - optional query `id`, `stripe_payment_intent`, `yoco_charge_id`, `yoco_transaction_id`, `limit`
 
 Set the secret with:
 

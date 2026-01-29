@@ -6,14 +6,12 @@ interface CheckoutData {
   customerEmail: string;
   notes?: string;
   site?: string; // e.g., 'vaughnsterling'
-  provider?: 'paypal' | 'yoco' | 'paystack' | 'stripe'; // optional provider override
 }
 
 interface CheckoutResponse {
   success: boolean;
   orderId?: string;
-  paypalOrderId?: string;
-  approveUrl?: string;
+  checkoutUrl?: string;
   depositAmount?: number;
   totalAmount?: number;
   currency?: string;
@@ -37,9 +35,8 @@ export const useCheckout = (): UseCheckoutReturn => {
     try {
       const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
       
-      // Choose endpoint based on requested provider (default: PayPal)
-      const provider = data.provider || 'paypal';
-      const endpoint = provider === 'yoco' ? '/api/create-yoco-charge' : '/api/create-paypal-order';
+      // YOCO is the primary payment provider
+      const endpoint = '/api/create-yoco-charge';
 
       const response = await fetch(`${apiUrl}${endpoint}`, {
         method: 'POST',
@@ -59,7 +56,7 @@ export const useCheckout = (): UseCheckoutReturn => {
 
       if (!response.ok) {
         const errorData = await response.json();
-        setError(errorData.error || 'Failed to create PayPal order');
+        setError(errorData.error || 'Failed to create payment');
         return null;
       }
 
@@ -70,9 +67,10 @@ export const useCheckout = (): UseCheckoutReturn => {
         return null;
       }
 
-      // Redirect to PayPal approval page
-      if (responseData?.approveUrl) {
-        window.location.href = responseData.approveUrl;
+      // Redirect to YOCO checkout page
+      const checkoutUrl = responseData?.checkoutUrl;
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
       }
 
       return responseData;

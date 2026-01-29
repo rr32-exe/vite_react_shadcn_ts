@@ -12,11 +12,11 @@ workers_dev = true
 #[build]
 #  command = ""
 
-# NOTE: We recommend using `wrangler secret put` to set the PAYSTACK key and SUPABASE keys.
+# NOTE: We recommend using `wrangler secret put` to set the YOCO key and SUPABASE keys.
 # For example:
-#   wrangler secret put PAYSTACK_SECRET_KEY
+#   wrangler secret put YOCO_SECRET_KEY
 #   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-#   wrangler secret put PAYSTACK_WEBHOOK_SECRET
+#   wrangler secret put YOCO_WEBHOOK_SECRET
 #   wrangler secret put ADMIN_SECRET
 # You can also add variables in the dashboard or under [vars] below.
 
@@ -43,8 +43,8 @@ workers_dev = true
 # Optional env name for Sentry
 # WORKER_ENV = "production"
 # SENTRY_RELEASE = ""
-# Optional: explicitly set paystack mode to 'test' or 'live' in production.
-# PAYSTACK_MODE = "test"  # or "live"
+# Optional: set YOCO mode
+# YOCO_MODE = "test"  # or "live"
 # Yoco payment gateway (for VaughnSterling)
 # YOCO_API_URL = "https://online.yoco.com"  # or your enterprise endpoint
 # YOCO_SECRET_KEY = "sk_live_..."

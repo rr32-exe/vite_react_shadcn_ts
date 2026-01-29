@@ -14,7 +14,6 @@ CREATE TABLE IF NOT EXISTS public.orders (
   notes text,
   status text NOT NULL DEFAULT 'pending', -- values: pending, paid, cancelled
   stripe_session_id text,
-  paystack_reference text,
   paypal_order_id text,
   yoco_charge_id text,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -23,7 +22,6 @@ CREATE TABLE IF NOT EXISTS public.orders (
 
 CREATE INDEX IF NOT EXISTS idx_orders_customer_email ON public.orders (customer_email);
 CREATE INDEX IF NOT EXISTS idx_orders_stripe_session_id ON public.orders (stripe_session_id);
-CREATE INDEX IF NOT EXISTS idx_orders_paystack_reference ON public.orders (paystack_reference);
 CREATE INDEX IF NOT EXISTS idx_orders_paypal_order_id ON public.orders (paypal_order_id);
 CREATE INDEX IF NOT EXISTS idx_orders_yoco_charge_id ON public.orders (yoco_charge_id);
 
@@ -34,8 +32,6 @@ CREATE TABLE IF NOT EXISTS public.payments (
   stripe_payment_intent text,
   stripe_charge_id text,
   stripe_session_id text,
-  paystack_reference text,
-  paystack_transaction_id text,
   paypal_order_id text,
   paypal_transaction_id text,
   yoco_charge_id text,
@@ -51,8 +47,6 @@ CREATE INDEX IF NOT EXISTS idx_payments_order_id ON public.payments (order_id);
 -- Prevent duplicate payments for the same providers' objects
 CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_stripe_payment_intent ON public.payments (stripe_payment_intent);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_stripe_session_id ON public.payments (stripe_session_id);
-CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_paystack_reference ON public.payments (paystack_reference);
-CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_paystack_transaction_id ON public.payments (paystack_transaction_id);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_paypal_order_id ON public.payments (paypal_order_id);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_paypal_transaction_id ON public.payments (paypal_transaction_id);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_yoco_charge_id ON public.payments (yoco_charge_id);

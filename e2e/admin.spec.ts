@@ -17,9 +17,9 @@ test('admin login and fetch orders via JWT', async ({ request }) => {
   const ordersJson = await ordersRes.json();
   expect(ordersJson).toHaveProperty('data');
 
-  // fetch CSV and ensure Paystack column present
+  // fetch CSV and ensure YOCO charge column present
   const csvRes = await request.get('/api/admin/orders.csv', { headers: { Authorization: `Bearer ${token}` } });
   expect(csvRes.ok()).toBeTruthy();
   const csv = await csvRes.text();
-  expect(csv.split('\n')[0]).toContain('paystack_reference');
+  expect(csv.split('\n')[0]).toContain('yoco_charge_id');
 });

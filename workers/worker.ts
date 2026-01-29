@@ -1,16 +1,16 @@
-/* Cloudflare Worker that implements three endpoints:
-   - POST /api/create-checkout
+/* Cloudflare Worker that implements API endpoints for payments and forms:
+   - POST /api/create-yoco-charge
    - POST /api/contact-submit
    - POST /api/newsletter-subscribe
 
    Uses environment variables (set with `wrangler secret put` or via `vars`):
-   - PAYSTACK_SECRET_KEY (secret)
+   - YOCO_API_URL (var) and YOCO_SECRET_KEY (secret)
    - SUPABASE_URL (secret or var, e.g., https://xyz.supabase.co)
    - SUPABASE_SERVICE_ROLE_KEY (secret)
 
    Implementation notes:
    - Uses Supabase REST (PostgREST) with the Service Role key to insert/upsert rows.
-   - Uses Paystack REST API to initialize transactions (no SDK required).
+   - Uses YOCO REST API to initialize charges.
 */
 
 const CORS_HEADERS = {
@@ -92,20 +92,10 @@ export default {
         return handleStatus(request, env);
       }
 
-      if (url.pathname === '/api/paystack-webhook' && request.method === 'POST') {
-        return handlePaystackWebhook(request, env);
-      }
 
-      if (url.pathname === '/api/paypal-webhook' && request.method === 'POST') {
-        return handlePayPalWebhook(request, env);
-      }
 
       if (url.pathname === '/api/yoco-webhook' && request.method === 'POST') {
         return handleYocoWebhook(request, env);
-      }
-
-      if (url.pathname === '/api/create-paypal-order' && request.method === 'POST') {
-        return handleCreatePayPalOrder(request, env);
       }
 
       // Yoco flow (VaughnSterling payments)
@@ -148,115 +138,9 @@ const services: Record<string, { name: string; price: number; currency: string }
 };
 
 async function handleCreateCheckout(request: Request, env: any) {
-  const paystackKey = env.PAYSTACK_SECRET_KEY;
-  if (!paystackKey) return jsonResponse({ error: 'Paystack not configured' }, 500);
-
-  const supabaseUrl = env.SUPABASE_URL;
-  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !supabaseKey) return jsonResponse({ error: 'Supabase not configured' }, 500);
-
-  const payload = await request.json();
-  const { serviceId, customerName, customerEmail, notes, successUrl, cancelUrl } = payload;
-
-  if (!serviceId || !customerName || !customerEmail) {
-    return jsonResponse({ error: 'Service ID, customer name, and email are required' }, 400);
-  }
-
-  const service = services[serviceId];
-  if (!service) return jsonResponse({ error: 'Invalid service ID' }, 400);
-
-  // Calculate amounts (cents)
-  const totalAmountCents = Math.round(service.price * 100);
-  const depositAmountCents = Math.round(totalAmountCents / 2);
-
-  // Create order row in Supabase via REST
-  const orderResp = await fetch(`${supabaseUrl}/rest/v1/orders`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`,
-      Prefer: 'return=representation'
-    },
-    body: JSON.stringify([{
-      customer_name: customerName,
-      customer_email: customerEmail.toLowerCase(),
-      service_id: serviceId,
-      service_name: service.name,
-      total_amount: totalAmountCents,
-      deposit_amount: depositAmountCents,
-      currency: service.currency,
-      notes: notes || null,
-      status: 'pending'
-    }])
-  });
-
-  if (!orderResp.ok) {
-    const errText = await orderResp.text();
-    console.error('Order creation failed:', errText);
-    return jsonResponse({ error: 'Failed to create order' }, 500);
-  }
-
-  const orderRows = await orderResp.json();
-  const order = orderRows[0];
-
-  // Initialize Paystack transaction (returns authorization_url and reference)
-  const initResp = await fetch('https://api.paystack.co/transaction/initialize', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${paystackKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      email: customerEmail.toLowerCase(),
-      amount: depositAmountCents,
-      currency: service.currency,
-      callback_url: successUrl || `${request.headers.get('origin')}/payment-success?reference={reference}`,
-      metadata: {
-        order_id: order.id,
-        service_id: serviceId,
-        service_name: service.name,
-        customer_name: customerName,
-        payment_type: 'deposit'
-      }
-    })
-  });
-
-  const initBody = await initResp.json();
-  if (!initResp.ok) {
-    console.error('Paystack error:', initBody);
-    return jsonResponse({ error: initBody.message || 'Failed to initialize Paystack transaction' }, 500);
-  }
-
-  const reference = initBody.data?.reference;
-  const authorizationUrl = initBody.data?.authorization_url;
-
-  // Update order with paystack_reference (schema migration to add this column will be applied separately)
-  try {
-    await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${order.id}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
-        Prefer: 'return=representation'
-      },
-      body: JSON.stringify({ paystack_reference: reference })
-    });
-  } catch (err) {
-    console.error('Failed to update order with paystack reference:', err);
-  }
-
-  // Keep response shape similar to previous Stripe-based API so frontend continues to work
-  return jsonResponse({
-    success: true,
-    sessionId: reference,
-    sessionUrl: authorizationUrl,
-    orderId: order.id,
-    depositAmount: depositAmountCents / 100,
-    totalAmount: totalAmountCents / 100,
-    currency: service.currency
-  });
+  // This legacy endpoint was previously used to initialize Paystack checkouts.
+  // It is now deprecated. Use `/api/create-yoco-charge` instead.
+  return jsonResponse({ error: 'Deprecated endpoint. Use /api/create-yoco-charge' }, 400);
 }
 
 async function handleContactSubmit(request: Request, env: any) {
@@ -345,11 +229,10 @@ async function handleNewsletterSubscribe(request: Request, env: any) {
 
 // Lightweight status endpoint for smoke tests and quick checks
 async function handleStatus(request: Request, env: any) {
-  const paystackConfigured = Boolean(env.PAYSTACK_SECRET_KEY);
-  const paystackWebhookConfigured = Boolean(env.PAYSTACK_WEBHOOK_SECRET);
+  const yocoConfigured = Boolean(env.YOCO_SECRET_KEY && env.YOCO_API_URL);
+  const yocoWebhookConfigured = Boolean(env.YOCO_WEBHOOK_SECRET);
   const supabaseConfigured = Boolean(env.SUPABASE_SERVICE_ROLE_KEY && env.SUPABASE_URL);
-  const paystackMode = env.PAYSTACK_MODE || (paystackConfigured ? 'unknown' : 'unset');
-  return jsonResponse({ ok: true, paystack: { configured: paystackConfigured, webhookConfigured: paystackWebhookConfigured, mode: paystackMode }, supabase: { configured: supabaseConfigured }, env: { worker_env: env.WORKER_ENV || null } });
+  return jsonResponse({ ok: true, yoco: { configured: yocoConfigured, webhookConfigured: yocoWebhookConfigured }, supabase: { configured: supabaseConfigured }, env: { worker_env: env.WORKER_ENV || null } });
 }
 
 /* --- Utility: retry + monitoring --- */
@@ -531,7 +414,7 @@ async function handleAdminRequest(request: Request, env: any) {
       const rows = await resp.json();
       if (path === '/orders.csv') {
         // Return CSV
-        const header = ['id','customer_name','customer_email','service_id','service_name','total_amount','deposit_amount','currency','status','stripe_session_id','paystack_reference','created_at'];
+        const header = ['id','customer_name','customer_email','service_id','service_name','total_amount','deposit_amount','currency','status','stripe_session_id','yoco_charge_id','created_at'];
         const csv = [header.join(',')].concat(rows.map((r: any) => header.map(h => `"${String(r[h] ?? '')}"`).join(','))).join('\n');
         return new Response(csv, { headers: { 'Content-Type': 'text/csv', ...CORS_HEADERS } });
       }
@@ -542,8 +425,8 @@ async function handleAdminRequest(request: Request, env: any) {
       let endpoint = `${supabaseUrl}/rest/v1/payments?select=*&limit=${limit}&order=created_at.desc`;
       if (id) endpoint = `${supabaseUrl}/rest/v1/payments?id=eq.${encodeURIComponent(id)}`;
       else if (query.get('stripe_payment_intent')) endpoint = `${supabaseUrl}/rest/v1/payments?stripe_payment_intent=eq.${encodeURIComponent(query.get('stripe_payment_intent') || '')}`;
-      else if (query.get('paystack_reference')) endpoint = `${supabaseUrl}/rest/v1/payments?paystack_reference=eq.${encodeURIComponent(query.get('paystack_reference') || '')}`;
-      else if (query.get('paystack_transaction_id')) endpoint = `${supabaseUrl}/rest/v1/payments?paystack_transaction_id=eq.${encodeURIComponent(query.get('paystack_transaction_id') || '')}`;
+      else if (query.get('yoco_charge_id')) endpoint = `${supabaseUrl}/rest/v1/payments?yoco_charge_id=eq.${encodeURIComponent(query.get('yoco_charge_id') || '')}`;
+      else if (query.get('yoco_transaction_id')) endpoint = `${supabaseUrl}/rest/v1/payments?yoco_transaction_id=eq.${encodeURIComponent(query.get('yoco_transaction_id') || '')}`;
 
       const resp = await fetch(endpoint, { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } });
       const rows = resp.ok ? await resp.json() : { error: await resp.text() };
@@ -668,181 +551,35 @@ async function hmacSHA512Hex(secret: string, message: string) {
   return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function handlePaystackWebhook(request: Request, env: any) {
-  const webhookSecret = env.PAYSTACK_WEBHOOK_SECRET;
-  const payload = await request.text();
-  const sigHeader = request.headers.get('x-paystack-signature') || '';
-
-  if (webhookSecret) {
-    let expected: string;
-    try {
-      expected = await hmacSHA512Hex(webhookSecret, payload);
-    } catch (err) {
-      console.error('Failed computing HMAC for Paystack webhook', err);
-      return new Response(JSON.stringify({ error: 'Webhook verification error' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
-    }
-    if (!secureCompare(expected, sigHeader)) {
-      console.error('Invalid Paystack webhook signature');
-      await sendMonitoringAlert(env, { level: 'warn', action: 'webhook_invalid_signature', ip: getClientIP(request) });
-      return new Response(JSON.stringify({ error: 'Invalid signature' }), { status: 400, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
-    }
-  }
-
-  let event: any;
-  try {
-    event = JSON.parse(payload);
-  } catch (err) {
-    console.error('Invalid Paystack JSON payload', err);
-    await sendMonitoringAlert(env, { level: 'error', action: 'webhook_invalid_json', error: String(err) });
-    return new Response(JSON.stringify({ error: 'Invalid payload' }), { status: 400, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
-  }
-
-  const supabaseUrl = env.SUPABASE_URL;
-  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !supabaseKey) {
-    console.error('Supabase not configured (paystack webhook)');
-    return new Response(JSON.stringify({ error: 'Supabase not configured' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
-  }
-
-  try {
-    const type = event.event || event.type || (event.data && event.data.event) || null;
-
-    if (type === 'charge.success' || type === 'transaction.success' || type === 'transfer.success' || (event.data && event.data.status === 'success')) {
-      const data = event.data || {};
-      const reference = data.reference || null;
-      const transactionId = data.id || null;
-      const amount = data.amount || 0;
-      const currency = data.currency || null;
-      const orderId = data.metadata?.order_id ? Number(data.metadata.order_id) : null;
-
-      // Idempotency check: does a payment with this paystack_reference already exist?
-      if (reference) {
-        const existsResp = await fetch(`${supabaseUrl}/rest/v1/payments?paystack_reference=eq.${encodeURIComponent(reference)}`, {
-          headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }
-        });
-        if (existsResp.ok) {
-          const rows = await existsResp.json();
-          if (rows && rows.length > 0) {
-            console.log('Payment already recorded for', reference);
-            // still ensure order status set to paid
-            if (orderId) {
-              await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${orderId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
-                body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() })
-              });
-            } else if (reference) {
-              await fetch(`${supabaseUrl}/rest/v1/orders?paystack_reference=eq.${encodeURIComponent(reference)}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
-                body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() })
-              });
-            }
-            return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
-          }
-        }
-      }
-
-      // Insert payment record (with retries)
-      try {
-        const paymentInsertOptions: RequestInit = {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Prefer: 'return=representation' },
-          body: JSON.stringify([{
-            order_id: orderId,
-            paystack_reference: reference,
-            paystack_transaction_id: transactionId,
-            amount: amount,
-            currency: currency,
-            status: 'succeeded',
-            raw: event
-          }])
-        };
-        try {
-          await retryFetchJson(`${supabaseUrl}/rest/v1/payments`, paymentInsertOptions, 4, 200);
-        } catch (err) {
-          console.error('Failed to insert payment after retries:', err);
-          await sendMonitoringAlert(env, { level: 'error', action: 'insert_payment', error: String(err), event });
-        }
-      } catch (err) {
-        console.error('Error inserting payment:', err);
-      }
-
-      // Update order status (with retries)
-      const patchOptions: RequestInit = {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
-        body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() })
-      };
-      try {
-        if (orderId) {
-          await retryFetchJson(`${supabaseUrl}/rest/v1/orders?id=eq.${orderId}`, patchOptions, 4, 200);
-        } else if (reference) {
-          await retryFetchJson(`${supabaseUrl}/rest/v1/orders?paystack_reference=eq.${encodeURIComponent(reference)}`, patchOptions, 4, 200);
-        }
-      } catch (err) {
-        console.error('Failed to update order status after retries:', err);
-        await sendMonitoringAlert(env, { level: 'error', action: 'update_order', error: String(err), reference, orderId });
-      }
-
-      return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
-    }
-
-    // For other events, acknowledge
-    return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
-  } catch (err: any) {
-    console.error('Paystack webhook handling error:', err);
-    return new Response(JSON.stringify({ error: err.message || 'Webhook handling error' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
-  }
+async function hmacSHA256Hex(secret: string, message: string) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message));
+  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// ----------------- PayPal POC handlers -----------------
+// ----------------- YOCO handlers -----------------
 
-let _paypalTokenCache: { token?: string; expiry?: number } = {};
-
-function getPayPalBaseUrl(env: any) {
-  return (env.PAYPAL_MODE && env.PAYPAL_MODE.toLowerCase() === 'live') ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
-}
-
-async function getPayPalAccessToken(env: any) {
-  const now = Date.now();
-  if (_paypalTokenCache.token && _paypalTokenCache.expiry && _paypalTokenCache.expiry > now) return _paypalTokenCache.token;
-
-  const clientId = env.PAYPAL_CLIENT_ID;
-  const clientSecret = env.PAYPAL_SECRET;
-  if (!clientId || !clientSecret) throw new Error('PayPal not configured');
-  const base = getPayPalBaseUrl(env);
-
-  const resp = await fetch(`${base}/v1/oauth2/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: 'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64') },
-    body: 'grant_type=client_credentials'
-  });
-  if (!resp.ok) {
-    const errBody = await resp.text();
-    throw new Error(`PayPal token request failed: ${errBody}`);
-  }
-  const body = await resp.json();
-  const token = body.access_token;
-  const expiresIn = Number(body.expires_in || 300);
-  _paypalTokenCache = { token, expiry: Date.now() + (expiresIn - 10) * 1000 };
-  return token;
-}
-
-async function handleCreatePayPalOrder(request: Request, env: any) {
+async function handleCreateYocoCharge(request: Request, env: any) {
   const supabaseUrl = env.SUPABASE_URL;
   const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !supabaseKey) return jsonResponse({ error: 'Supabase not configured' }, 500);
 
   const payload = await request.json();
-  const { serviceId, customerName, customerEmail, successUrl, cancelUrl } = payload;
+  const { serviceId, customerName, customerEmail, notes, successUrl, cancelUrl } = payload;
   if (!serviceId || !customerName || !customerEmail) return jsonResponse({ error: 'Service ID, customer name, and email are required' }, 400);
   const service = services[serviceId];
   if (!service) return jsonResponse({ error: 'Invalid service ID' }, 400);
 
-  // create order row in Supabase
   const totalAmountCents = Math.round(service.price * 100);
   const depositAmountCents = Math.round(totalAmountCents / 2);
+
+  // create order row in Supabase
   const orderResp = await fetch(`${supabaseUrl}/rest/v1/orders`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Prefer: 'return=representation' },
@@ -854,145 +591,121 @@ async function handleCreatePayPalOrder(request: Request, env: any) {
       total_amount: totalAmountCents,
       deposit_amount: depositAmountCents,
       currency: service.currency,
-      notes: payload.notes || null,
+      notes: notes || null,
       status: 'pending'
     }])
   });
   if (!orderResp.ok) {
-    const errText = await orderResp.text();
-    console.error('Order creation failed (PayPal flow):', errText);
+    console.error('Order creation failed (YOCO flow)');
     return jsonResponse({ error: 'Failed to create order' }, 500);
   }
   const order = (await orderResp.json())[0];
 
-  // Create PayPal order
+  const yocoBase = env.YOCO_API_URL;
+  const yocoKey = env.YOCO_SECRET_KEY;
+  if (!yocoBase || !yocoKey) return jsonResponse({ error: 'YOCO not configured' }, 500);
+
   try {
-    const token = await getPayPalAccessToken(env);
-    const base = getPayPalBaseUrl(env);
-    const createResp = await fetch(`${base}/v2/checkout/orders`, {
+    const resp = await fetch(`${yocoBase.replace(/\/$/, '')}/charges`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${yocoKey}` },
       body: JSON.stringify({
-        intent: 'CAPTURE',
-        purchase_units: [{
-          reference_id: String(order.id),
-          amount: { currency_code: service.currency, value: (depositAmountCents / 100).toFixed(2) }
-        }],
-        application_context: {
-          return_url: successUrl || `${request.headers.get('origin')}/payment-success`,
-          cancel_url: cancelUrl || `${request.headers.get('origin')}/payment-cancel`
-        }
+        amount: depositAmountCents,
+        currency: service.currency,
+        metadata: { order_id: order.id, service_id: serviceId, service_name: service.name },
+        redirect: { success_url: successUrl || `${request.headers.get('origin')}/payment-success`, cancel_url: cancelUrl || `${request.headers.get('origin')}/payment-cancel` }
       })
     });
-    const initBody = await createResp.json();
-    if (!createResp.ok) {
-      console.error('PayPal create order error:', initBody);
-      return jsonResponse({ error: initBody.message || 'Failed to create PayPal order' }, 500);
+
+    const body = await resp.json();
+    if (!resp.ok) {
+      console.error('YOCO create charge error:', body);
+      return jsonResponse({ error: body.message || 'Failed to create YOCO charge' }, 500);
     }
 
-    const paypalOrderId = initBody.id;
-    const approveLink = (initBody.links || []).find((l: any) => l.rel === 'approve')?.href || null;
+    const chargeId = body.id || body.chargeId || null;
+    const checkoutUrl = body.checkoutUrl || body.checkout_url || body.redirect?.checkoutUrl || null;
 
-    // Update order with paypal_order_id
+    // update order with yoco_charge_id
     try {
       await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${order.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
-        body: JSON.stringify({ paypal_order_id: paypalOrderId })
+        headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Prefer: 'return=representation' },
+        body: JSON.stringify({ yoco_charge_id: chargeId })
       });
     } catch (err) {
-      console.error('Failed to update order with paypal_order_id:', err);
+      console.error('Failed to update order with yoco_charge_id:', err);
     }
 
-    return jsonResponse({ orderId: order.id, paypalOrderId, approveUrl: approveLink });
+    return jsonResponse({ success: true, chargeId, checkoutUrl, orderId: order.id, depositAmount: depositAmountCents / 100, totalAmount: totalAmountCents / 100, currency: service.currency });
   } catch (err: any) {
-    console.error('PayPal create order error:', err);
+    console.error('YOCO create charge error:', err);
     return jsonResponse({ error: String(err) }, 500);
   }
 }
 
-async function handlePayPalWebhook(request: Request, env: any) {
+async function handleYocoWebhook(request: Request, env: any) {
   const payloadText = await request.text();
-  let payload: any;
+  const sigHeader = request.headers.get('x-yoco-signature') || '';
+  const webhookSecret = env.YOCO_WEBHOOK_SECRET;
+
+  if (webhookSecret) {
+    let expected: string;
+    try {
+      expected = await hmacSHA256Hex(webhookSecret, payloadText);
+    } catch (err) {
+      console.error('Failed computing HMAC for YOCO webhook', err);
+      return new Response(JSON.stringify({ error: 'Webhook verification error' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+    }
+    if (!secureCompare(expected, sigHeader)) {
+      console.error('Invalid YOCO webhook signature');
+      await sendMonitoringAlert(env, { level: 'warn', action: 'webhook_invalid_signature', ip: getClientIP(request) });
+      return new Response(JSON.stringify({ error: 'Invalid signature' }), { status: 400, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+    }
+  }
+
+  let event: any;
   try {
-    payload = JSON.parse(payloadText);
-  } catch (e) {
-    console.error('Invalid PayPal JSON payload', e);
+    event = JSON.parse(payloadText);
+  } catch (err) {
+    console.error('Invalid YOCO JSON payload', err);
     return new Response(JSON.stringify({ error: 'Invalid payload' }), { status: 400, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
   }
 
   const supabaseUrl = env.SUPABASE_URL;
   const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !supabaseKey) {
-    console.error('Supabase not configured (PayPal webhook)');
+    console.error('Supabase not configured (YOCO webhook)');
     return new Response(JSON.stringify({ error: 'Supabase not configured' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
   }
 
-  const paypalWebhookId = env.PAYPAL_WEBHOOK_ID;
-  if (!paypalWebhookId) {
-    console.error('PayPal webhook id not configured');
-    return new Response(JSON.stringify({ error: 'PayPal webhook not configured' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
-  }
-
   try {
-    const base = getPayPalBaseUrl(env);
-    const token = await getPayPalAccessToken(env);
+    // event shapes vary between providers - best-effort extraction
+    const type = event.type || event.event || (event.data && event.data.event) || null;
+    const data = event.data || event.resource || {};
+    const chargeId = data.id || data.charge_id || data.chargeId || null;
+    const transactionId = (data.transaction && data.transaction.id) || data.transaction_id || data.transactionId || null;
+    const amount = data.amount || (data.amount_in_cents) || 0;
+    const currency = data.currency || 'ZAR';
+    const orderId = data.metadata?.order_id ? Number(data.metadata.order_id) : (data.metadata && data.metadata.order_id ? Number(data.metadata.order_id) : null);
 
-    // Prepare verification body
-    const verificationBody = {
-      auth_algo: request.headers.get('paypal-auth-algo'),
-      cert_url: request.headers.get('paypal-cert-url'),
-      transmission_id: request.headers.get('paypal-transmission-id'),
-      transmission_sig: request.headers.get('paypal-transmission-sig'),
-      transmission_time: request.headers.get('paypal-transmission-time'),
-      webhook_id: paypalWebhookId,
-      webhook_event: payload
-    };
+    const succeeded = (type && (type.endsWith('succeeded') || type.endsWith('completed'))) || (data.status && (data.status === 'succeeded' || data.status === 'paid' || data.status === 'successful'));
 
-    const verifyResp = await fetch(`${base}/v1/notifications/verify-webhook-signature`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(verificationBody)
-    });
-
-    const verifyBody = await verifyResp.json();
-    if (!verifyResp.ok || verifyBody.verification_status !== 'SUCCESS') {
-      console.error('PayPal webhook verification failed', verifyBody);
-      await sendMonitoringAlert(env, { level: 'warn', action: 'paypal_webhook_invalid_signature', payload: verifyBody });
-      return new Response(JSON.stringify({ error: 'Invalid signature' }), { status: 400, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
-    }
-
-    // Extract useful resource info (best-effort)
-    const eventType = payload.event_type || payload.event;
-    const resource = payload.resource || {};
-    // Prefer explicit order_id when present (captures may set resource.id to a capture id)
-    const paypalOrderId = resource.order_id || resource.id || (resource.purchase_units && resource.purchase_units[0] && resource.purchase_units[0].reference_id) || null;
-    const paypalTransactionId = (resource.payments && resource.payments.captures && resource.payments.captures[0] && resource.payments.captures[0].id) || resource.id || null;
-    const amount = (resource.amount && (resource.amount.value ? Math.round(Number(resource.amount.value) * 100) : null)) || null;
-    const orderRef = resource.reference_id || resource.custom_id || null;
-
-    // Only handle completed events (capture completed or order approved/captured)
-    const successful = (eventType && (eventType.includes('CAPTURE') || eventType.includes('ORDER') || eventType.includes('PAYMENT'))) || (resource.status && resource.status.toLowerCase() === 'completed');
-
-    if (successful && paypalOrderId) {
-      // Idempotency: check existing payment
-      try {
-        const existsResp = await fetch(`${supabaseUrl}/rest/v1/payments?paypal_order_id=eq.${encodeURIComponent(paypalOrderId)}`, { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } });
+    if (succeeded) {
+      // Idempotency: has this transaction been recorded?
+      if (transactionId) {
+        const existsResp = await fetch(`${supabaseUrl}/rest/v1/payments?yoco_transaction_id=eq.${encodeURIComponent(transactionId)}`, { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } });
         if (existsResp.ok) {
           const rows = await existsResp.json();
           if (rows && rows.length > 0) {
-            console.log('Payment already recorded for PayPal order', paypalOrderId);
-            // update orders to paid by reference if possible
-            if (orderRef) {
-              await fetch(`${supabaseUrl}/rest/v1/orders?paypal_order_id=eq.${encodeURIComponent(orderRef)}`, {
-                method: 'PATCH', headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }, body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() })
-              });
+            console.log('Payment already recorded for', transactionId);
+            // ensure order status set to paid
+            if (orderId) {
+              await fetch(`${supabaseUrl}/rest/v1/orders?id=eq.${orderId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }, body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() }) });
             }
             return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
           }
         }
-      } catch (err) {
-        console.error('PayPal idempotency check failed', err);
       }
 
       // Insert payment
@@ -1001,32 +714,32 @@ async function handlePayPalWebhook(request: Request, env: any) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Prefer: 'return=representation' },
           body: JSON.stringify([{
-            order_id: orderRef ? Number(orderRef) : null,
-            paypal_order_id: paypalOrderId,
-            paypal_transaction_id: paypalTransactionId,
+            order_id: orderId ? Number(orderId) : null,
+            yoco_charge_id: chargeId,
+            yoco_transaction_id: transactionId,
             amount: amount || 0,
-            currency: resource.amount?.currency_code || 'USD',
+            currency,
             status: 'succeeded',
-            raw: payload
+            raw: event
           }])
         };
         await retryFetchJson(`${supabaseUrl}/rest/v1/payments`, paymentInsertOptions, 4, 200);
       } catch (err) {
-        console.error('Error inserting PayPal payment:', err);
-        await sendMonitoringAlert(env, { level: 'error', action: 'insert_paypal_payment', error: String(err), event: payload });
+        console.error('Error inserting YOCO payment:', err);
+        await sendMonitoringAlert(env, { level: 'error', action: 'insert_yoco_payment', error: String(err), event });
       }
 
       // Update order status
       try {
         const patchOptions: RequestInit = { method: 'PATCH', headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }, body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() }) };
-        if (orderRef) {
-          await retryFetchJson(`${supabaseUrl}/rest/v1/orders?id=eq.${orderRef}`, patchOptions, 4, 200);
-        } else if (paypalOrderId) {
-          await retryFetchJson(`${supabaseUrl}/rest/v1/orders?paypal_order_id=eq.${encodeURIComponent(paypalOrderId)}`, patchOptions, 4, 200);
+        if (orderId) {
+          await retryFetchJson(`${supabaseUrl}/rest/v1/orders?id=eq.${orderId}`, patchOptions, 4, 200);
+        } else if (chargeId) {
+          await retryFetchJson(`${supabaseUrl}/rest/v1/orders?yoco_charge_id=eq.${encodeURIComponent(chargeId)}`, patchOptions, 4, 200);
         }
       } catch (err) {
-        console.error('Failed to update order status after PayPal webhook:', err);
-        await sendMonitoringAlert(env, { level: 'error', action: 'update_order_paypal', error: String(err), paypalOrderId, orderRef });
+        console.error('Failed to update order status after YOCO webhook:', err);
+        await sendMonitoringAlert(env, { level: 'error', action: 'update_order_yoco', error: String(err), chargeId, orderId });
       }
 
       return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
@@ -1035,13 +748,15 @@ async function handlePayPalWebhook(request: Request, env: any) {
     // acknowledge other events
     return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
   } catch (err: any) {
-    console.error('PayPal webhook handling error:', err);
-    await sendMonitoringAlert(env, { level: 'error', action: 'paypal_webhook_error', error: String(err) });
-    return new Response(JSON.stringify({ error: 'Webhook handling error' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+    console.error('YOCO webhook handling error:', err);
+    return new Response(JSON.stringify({ error: err.message || 'Webhook handling error' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
   }
 }
 
-// ----------------- End PayPal handlers -----------------
+// ----------------- End YOCO handlers -----------------
+
+// Paystack and PayPal webhook handlers removed — These payment providers are deprecated.
+// YOCO is the primary payment provider. See handleYocoWebhook for the current webhook implementation.
 
 // ----------------- Yoco (VaughnSterling) handlers -----------------
 
