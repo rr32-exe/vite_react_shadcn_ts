@@ -6,8 +6,13 @@ workers_dev = true
 # Set your Cloudflare account ID here or add it with `wrangler publish --account-id <id>`
 # account_id = "<YOUR_ACCOUNT_ID>"
 
-# Example of adding a route (if you want to bind worker to a route on your domain):
-# route = "example.com/api/*"
+# Routes for the 3 sites with subdomains
+routes = [
+  { pattern = "blog.swankyboyz.com/*", zone_name = "swankyboyz.com" },
+  { pattern = "blog.vaughnsterlingtours.com/*", zone_name = "vaughnsterlingtours.com" },
+  { pattern = "vaughnsterling.com/*", zone_name = "vaughnsterling.com" },
+  { pattern = "www.vaughnsterling.com/*", zone_name = "vaughnsterling.com" }
+]
 
 #[build]
 #  command = ""

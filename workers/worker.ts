@@ -80,12 +80,47 @@ interface WorkerEnv {
   OAUTH_KV?: KVNamespace;
 }
 
+// Route to correct React app based on domain
+function serveReactApp(site: 'swankyboyz' | 'vaughnsterling' | 'vaughnsterlingtours', request: Request): Response {
+  const siteName = site === 'swankyboyz' ? 'SwankyBoyz' : site === 'vaughnsterling' ? 'VaughnSterling' : 'VaughnSterlingTours';
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${siteName}</title>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module">
+    window.__SITE__ = '${site}';
+  </script>
+  <script type="module" src="/assets/index.js"></script>
+</body>
+</html>`;
+  return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', ...CORS_HEADERS } });
+}
+
 export default {
   async fetch(request: Request, env: WorkerEnv): Promise<Response> {
     const url = new URL(request.url);
+    const host = request.headers.get('host') || '';
 
     if (request.method === 'OPTIONS') {
       return new Response('ok', { headers: CORS_HEADERS });
+    }
+
+    // Route to correct site based on domain/subdomain (skip for API calls)
+    if (!url.pathname.startsWith('/api/')) {
+      if (host.includes('blog.swankyboyz.com') || (host.includes('swankyboyz.com') && !host.includes('blog'))) {
+        return serveReactApp('swankyboyz', request);
+      }
+      if (host.includes('blog.vaughnsterlingtours.com') || (host.includes('vaughnsterlingtours.com') && !host.includes('blog'))) {
+        return serveReactApp('vaughnsterlingtours', request);
+      }
+      if (host.includes('vaughnsterling.com')) {
+        return serveReactApp('vaughnsterling', request);
+      }
     }
 
     try {
