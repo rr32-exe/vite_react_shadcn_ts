@@ -1,4 +1,4 @@
-name = "vite-react-shadcn-ts"
+name = "services-api"
 main = "workers/worker.ts"
 compatibility_date = "2026-01-15"
 workers_dev = true
@@ -12,6 +12,12 @@ workers_dev = true
 [assets]
   directory = "./dist"
 
-# This top-level `wrangler.toml` makes `npx wrangler publish` work from the repo root
-# and uploads the `dist/` directory as worker assets (so the static site and worker are published together).
-# If you prefer to publish the Worker only, remove or comment out the `[assets]` block.
+# Routes for the 3 sites with subdomains
+routes = [
+  { pattern = "blog.swankyboyz.com/*", zone_name = "swankyboyz.com" },
+  { pattern = "blog.vaughnsterlingtours.com/*", zone_name = "vaughnsterlingtours.com" },
+  { pattern = "vaughnsterling.com/*", zone_name = "vaughnsterling.com" },
+  { pattern = "www.vaughnsterling.com/*", zone_name = "vaughnsterling.com" },
+  { pattern = "swankyboyz.com/*", zone_name = "swankyboyz.com" },
+  { pattern = "vaughnsterlingtours.com/*", zone_name = "vaughnsterlingtours.com" }
+]

@@ -486,7 +486,7 @@ async function handleAdminRequest(request: Request, env: WorkerEnv): Promise<Res
       const rows = await resp.json();
       if (path === '/orders.csv') {
         // Return CSV
-        const header = ['id','customer_name','customer_email','service_id','service_name','total_amount','deposit_amount','currency','status','stripe_session_id','yoco_charge_id','created_at'];
+        const header = ['id','customer_name','customer_email','service_id','service_name','total_amount','deposit_amount','currency','status','yoco_charge_id','created_at'];
         const csv = [header.join(',')].concat(rows.map((r: Record<string, unknown>) => header.map(h => `"${String(r[h] ?? '')}"`).join(','))).join('\n');
         return new Response(csv, { headers: { 'Content-Type': 'text/csv', ...CORS_HEADERS } });
       }
@@ -496,7 +496,6 @@ async function handleAdminRequest(request: Request, env: WorkerEnv): Promise<Res
     if (path === '/payments' || path === '/payments/') {
       let endpoint = `${supabaseUrl}/rest/v1/payments?select=*&limit=${limit}&order=created_at.desc`;
       if (id) endpoint = `${supabaseUrl}/rest/v1/payments?id=eq.${encodeURIComponent(id)}`;
-      else if (query.get('stripe_payment_intent')) endpoint = `${supabaseUrl}/rest/v1/payments?stripe_payment_intent=eq.${encodeURIComponent(query.get('stripe_payment_intent') || '')}`;
       else if (query.get('yoco_charge_id')) endpoint = `${supabaseUrl}/rest/v1/payments?yoco_charge_id=eq.${encodeURIComponent(query.get('yoco_charge_id') || '')}`;
       else if (query.get('yoco_transaction_id')) endpoint = `${supabaseUrl}/rest/v1/payments?yoco_transaction_id=eq.${encodeURIComponent(query.get('yoco_transaction_id') || '')}`;
 

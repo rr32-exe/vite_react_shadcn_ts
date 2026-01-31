@@ -75,14 +75,9 @@ curl -X POST "https://<your-subdomain>.workers.dev/api/newsletter-subscribe" \
 - For `newsletter_subscribe` we use `on_conflict=email,site` to emulate upsert behavior.
 - YOCO API integration uses the REST API directly (no Node-only SDK required).
 
-### Paystack Webhooks (Deprecated)
-
-Paystack webhook support has been deprecated in this project. If you still receive Paystack events, please migrate them to YOCO or add a compatibility handler.
-
-- To migrate, configure YOCO and use `/api/yoco-webhook` to receive events, and ensure your `payments` table has `yoco_charge_id` and `yoco_transaction_id` columns.
 ### Yoco (VaughnSterling)
 
-Vaughn Sterling uses Yoco for payments by default. This Worker provides:
+YOCO is the only payment provider supported by this Worker, and Vaughn Sterling uses it by default. This Worker provides:
 
 - `POST /api/create-yoco-charge` — creates an `orders` row and requests a Yoco charge/checkout session. Requires `YOCO_API_URL` and `YOCO_SECRET_KEY` to be set in worker env.
 - `POST /api/yoco-webhook` — optional webhook endpoint to receive Yoco payment events. Set `YOCO_WEBHOOK_SECRET` to validate incoming webhooks if your Yoco account signs webhooks.
@@ -100,7 +95,7 @@ Notes:
 A secure admin interface is available under `/api/admin/*` and requires the `ADMIN_SECRET` secret (send as `Authorization: Bearer <ADMIN_SECRET>` or `x-admin-secret` header):
 
 - GET `/api/admin/orders` - optional query `id`, `email`, `limit`
-- GET `/api/admin/payments` - optional query `id`, `stripe_payment_intent`, `yoco_charge_id`, `yoco_transaction_id`, `limit`
+- GET `/api/admin/payments` - optional query `id`, `yoco_charge_id`, `yoco_transaction_id`, `limit`
 
 Set the secret with:
 
