@@ -53,8 +53,14 @@ function jsonResponse(obj: Record<string, unknown>, status = 200): Response {
   });
 }
 
+interface KVNamespace {
+  get(key: string): Promise<string | null>;
+  put(key: string, value: string): Promise<void>;
+  delete(key: string): Promise<void>;
+}
+
 interface WorkerEnv {
-  [key: string]: string | undefined;
+  [key: string]: string | undefined | KVNamespace;
   YOCO_API_URL?: string;
   YOCO_SECRET_KEY?: string;
   YOCO_WEBHOOK_SECRET?: string;
@@ -182,10 +188,11 @@ export default {
       }
 
       return new Response('Not Found', { status: 404 });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Uncaught error:', err);
       try { await sendToSentry(err, env); } catch(e) { console.error('Sentry send failed', e); }
-      return jsonResponse({ error: err?.message || 'Internal server error' }, 500);
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      return jsonResponse({ error: errorMsg || 'Internal server error' }, 500);
     }
   }
 };
@@ -304,7 +311,7 @@ async function sleep(ms: number) {
 }
 
 async function retryFetchJson(url: string, options: RequestInit, attempts = 3, backoffMs = 250) {
-  let lastErr: any = null;
+  let lastErr: unknown = null;
   for (let i = 0; i < attempts; i++) {
     try {
       const resp = await fetch(url, options);
@@ -350,7 +357,7 @@ async function sendToSentry(err: Error | string, env: WorkerEnv): Promise<void> 
   const parsed = parseDsn(dsn);
   if (!parsed || !parsed.projectId) return;
   const url = `${parsed.host}/api/${parsed.projectId}/store/`;
-  const extra: any = { worker_env: 'cloudflare' };
+  const extra: Record<string, string> = { worker_env: 'cloudflare' };
   // Add release and environment tags if present
   if (env.SENTRY_RELEASE) {
     extra.release = env.SENTRY_RELEASE;
@@ -358,12 +365,15 @@ async function sendToSentry(err: Error | string, env: WorkerEnv): Promise<void> 
   if (env.WORKER_ENV) {
     extra.worker_env_name = env.WORKER_ENV;
   }
-  const event: any = {
+  const errorMessage = err instanceof Error ? err.message : String(err);
+  const errorStack = err instanceof Error ? err.stack : String(err);
+  const errorName = err instanceof Error ? err.name : 'Error';
+  const event: Record<string, unknown> = {
     event_id: (Math.random() + 1).toString(36).substring(2, 12),
-    message: String(err?.message || err),
+    message: errorMessage,
     platform: 'javascript',
     logger: 'worker',
-    exception: [{ value: String(err?.stack || err), type: err?.name || 'Error' }],
+    exception: [{ value: errorStack, type: errorName }],
     level: 'error',
     timestamp: new Date().toISOString(),
     extra
@@ -575,8 +585,8 @@ async function handleGithubCallback(request: Request, env: WorkerEnv): Promise<R
   if (allowOrgs.length > 0) {
     const orgsResp = await fetch('https://api.github.com/user/orgs', { headers: { Authorization: `token ${accessToken}`, 'User-Agent': 'worker' } });
     if (!orgsResp.ok) return new Response('Failed to check orgs', { status: 500 });
-    const orgsJson = await orgsResp.json();
-    const memberOrgs = orgsJson.map((o: any) => o.login);
+    const orgsJson = await orgsResp.json() as Array<{login: string}>;
+    const memberOrgs = orgsJson.map((o: {login: string}) => o.login);
     const isMember = allowOrgs.some((o: string) => memberOrgs.includes(o));
     if (!isMember) return new Response('Unauthorized (org membership required)', { status: 401 });
   }
@@ -585,7 +595,7 @@ async function handleGithubCallback(request: Request, env: WorkerEnv): Promise<R
   const jwtSecret = env.ADMIN_JWT_SECRET;
   const jwtExpiry = Number(env.ADMIN_JWT_EXPIRES || '86400');
   const token = await signJwt({ role: 'admin', username: login, provider: 'github' }, jwtSecret, jwtExpiry);
-  const redirectTo = `${request.headers.get('origin')}/admin?token=${encodeURIComponent(token)}`;
+  const redirectTo = `${request.headers.get('origin') || 'http://localhost:5173'}/admin?token=${encodeURIComponent(token)}`;
   return Response.redirect(redirectTo, 302);
 }
 
@@ -695,12 +705,12 @@ async function handleCreateYocoCharge(request: Request, env: WorkerEnv): Promise
         headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Prefer: 'return=representation' },
         body: JSON.stringify({ yoco_charge_id: chargeId })
       });
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to update order with yoco_charge_id:', err);
     }
 
     return jsonResponse({ success: true, chargeId, checkoutUrl, orderId: order.id, depositAmount: depositAmountCents / 100, totalAmount: totalAmountCents / 100, currency: service.currency });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('YOCO create charge error:', err);
     return jsonResponse({ error: String(err) }, 500);
   }
@@ -715,7 +725,7 @@ async function handleYocoWebhook(request: Request, env: WorkerEnv): Promise<Resp
     let expected: string;
     try {
       expected = await hmacSHA256Hex(webhookSecret, payloadText);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed computing HMAC for YOCO webhook', err);
       return new Response(JSON.stringify({ error: 'Webhook verification error' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
     }
@@ -726,7 +736,7 @@ async function handleYocoWebhook(request: Request, env: WorkerEnv): Promise<Resp
     }
   }
 
-  let event: any;
+  let event: Record<string, unknown>;
   try {
     event = JSON.parse(payloadText);
   } catch (err) {
@@ -799,7 +809,7 @@ async function handleYocoWebhook(request: Request, env: WorkerEnv): Promise<Resp
         } else if (chargeId) {
           await retryFetchJson(`${supabaseUrl}/rest/v1/orders?yoco_charge_id=eq.${encodeURIComponent(chargeId)}`, patchOptions, 4, 200);
         }
-      } catch (err) {
+      } catch (err: unknown) {
         console.error('Failed to update order status after YOCO webhook:', err);
         await sendMonitoringAlert(env, { level: 'error', action: 'update_order_yoco', error: String(err), chargeId, orderId });
       }
@@ -809,9 +819,10 @@ async function handleYocoWebhook(request: Request, env: WorkerEnv): Promise<Resp
 
     // acknowledge other events
     return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('YOCO webhook handling error:', err);
-    return new Response(JSON.stringify({ error: err.message || 'Webhook handling error' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return new Response(JSON.stringify({ error: errorMsg || 'Webhook handling error' }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
   }
 }
 
