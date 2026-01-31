@@ -92,25 +92,7 @@ interface WorkerEnv {
 }
 
 // Route to correct React app based on domain
-function serveReactApp(site: 'swankyboyz' | 'vaughnsterling' | 'vaughnsterlingtours', request: Request): Response {
-  const siteName = site === 'swankyboyz' ? 'SwankyBoyz' : site === 'vaughnsterling' ? 'VaughnSterling' : 'VaughnSterlingTours';
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${siteName}</title>
-</head>
-<body>
-  <div id="root"></div>
-  <script type="module">
-    window.__SITE__ = '${site}';
-  </script>
-  <script type="module" src="/assets/index.js"></script>
-</body>
-</html>`;
-  return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', ...CORS_HEADERS } });
-}
+// REMOVED: Site detection now happens client-side in AppLayout.tsx
 
 export default {
   async fetch(request: Request, env: WorkerEnv): Promise<Response> {
