@@ -59,4 +59,4 @@ routes = [
 # KV namespaces (for storing transient OAuth state / allowlist etc.)
 [[kv_namespaces]]
 binding = "OAUTH_KV"
-id = "<YOUR_KV_NAMESPACE_ID>"  # create a KV namespace and put the id here or set via wrangler/dashboard
+id = "17a74afcfe4947e1be99dad806c22610"  # create a KV namespace and put the id here or set via wrangler/dashboard
