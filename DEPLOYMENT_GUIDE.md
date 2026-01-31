@@ -5,7 +5,7 @@
 ### Method A: Using Workers Routes (Recommended)
 
 1. **Log into Cloudflare Dashboard**
-   - Go to: https://dash.cloudflare.com
+   - Go to: [https://dash.cloudflare.com](https://dash.cloudflare.com)
 
 2. **Navigate to Workers & Pages**
    - Left sidebar → **Workers & Pages**
@@ -21,7 +21,7 @@
    - Click **Add Route** button
    - Add these routes (one by one):
 
-   ```
+   ```text
    Route Pattern:                    Zone
    ─────────────────────────────────────────────────────
    blog.swankyboyz.com/*             swankyboyz.com
@@ -36,7 +36,6 @@
 6. **Verify Routes Added**
    - You should see all 4 routes listed under "Routes"
 
----
 
 ### Method B: Using DNS CNAME Records (Alternative)
 
@@ -69,11 +68,12 @@ If you prefer DNS routing instead:
 
 ---
 
-## Part 2: Adding Worker Secrets & Variables
+## Part 2: Adding Worker Secrets and Variables
 
 ### Method A: Using wrangler CLI (Recommended for automation)
 
 1. **Authenticate with Wrangler**
+
    ```bash
    wrangler login
    # Or if you have an API token:
@@ -81,6 +81,7 @@ If you prefer DNS routing instead:
    ```
 
 2. **Add YOCO Secrets**
+
    ```bash
    # Navigate to project root
    cd /workspaces/vite_react_shadcn_ts
@@ -95,6 +96,7 @@ If you prefer DNS routing instead:
    ```
 
 3. **Add Supabase Secrets**
+
    ```bash
    # Add Supabase Service Role Key (required)
    wrangler secret put SUPABASE_SERVICE_ROLE_KEY
@@ -106,6 +108,7 @@ If you prefer DNS routing instead:
    ```
 
 4. **Add Admin Secrets**
+
    ```bash
    # Admin Secret for securing admin endpoints
    wrangler secret put ADMIN_SECRET
@@ -117,6 +120,7 @@ If you prefer DNS routing instead:
    ```
 
 5. **Verify Secrets Added**
+
    ```bash
    # List all secrets (note: values are hidden for security)
    wrangler secret list
@@ -140,6 +144,7 @@ If you prefer DNS routing instead:
    - Repeat for each secret
 
 4. **Required Secrets to Add**
+
    - `YOCO_SECRET_KEY` - Your YOCO API secret key
    - `SUPABASE_SERVICE_ROLE_KEY` - Your Supabase service role key
    - `ADMIN_SECRET` - Strong random string for admin protection
@@ -174,6 +179,7 @@ wrangler env vars set ADMIN_JWT_EXPIRES "86400"
    - Click **Settings** → **Vars** (left sidebar)
 
 2. **Add Variables**
+
    - Click **Add Variable** button
    - Enter name and value
    - Click **Add Variable**
@@ -206,6 +212,7 @@ npm run setup:workers
 ```
 
 This will prompt you for:
+
 - YOCO API credentials
 - Supabase details
 - Admin settings

@@ -2,13 +2,15 @@
 
 ## Step 1: Access YOCO Dashboard
 
-### Link (Correct):
-**https://app.yoco.com** (or https://www.yoco.com/za/login for South Africa)
+### Link (Correct)
 
-### Navigation:
+**[https://app.yoco.com](https://app.yoco.com)** (or [https://www.yoco.com/za/login](https://www.yoco.com/za/login) for South Africa)
+
+### Navigation
+
 1. Open your browser
-2. Go to: **https://app.yoco.com**
-3. If redirected, log in at: **https://www.yoco.com/za/login**
+2. Go to: **[https://app.yoco.com](https://app.yoco.com)**
+3. If redirected, log in at: **[https://www.yoco.com/za/login](https://www.yoco.com/za/login)**
 4. Log in with your YOCO merchant account credentials
    - Username/Email: Your merchant email
    - Password: Your YOCO password
@@ -21,20 +23,24 @@
 Once logged in, look for one of these menu paths (YOCO's UI may vary):
 
 ### Path A: Settings > Webhooks (Most Common)
+
 1. Look for **Settings** in the left sidebar menu
 2. Under Settings, find **Webhooks** or **Integrations > Webhooks**
 3. Click on **Webhooks**
 
 ### Path B: Integrations > Webhooks
+
 1. Look for **Integrations** in the main menu
 2. Click **Integrations**
 3. Select **Webhooks**
 
 ### Path C: Developer or API Settings
+
 1. Look for **Developers** or **API** section
 2. Find **Webhooks** subsection
 
 **Expected Screen:**
+
 - You should see a list of existing webhooks (may be empty if first time)
 - There should be an **"Add Webhook"** or **"+ New Webhook"** button
 
@@ -43,34 +49,42 @@ Once logged in, look for one of these menu paths (YOCO's UI may vary):
 ## Step 3: Create a New Webhook
 
 ### Click the Add/Create Button
+
 Look for one of these buttons:
+
 - **"+ Add Webhook"**
 - **"+ New Webhook"**
 - **"Create Webhook"**
 - **"Add New Webhook"**
 
-### A form will appear with these fields:
+### A form will appear with these fields
 
 #### Field 1: Webhook URL (REQUIRED)
+
 - **Label:** "Webhook URL", "Endpoint URL", or "Target URL"
 - **What to paste:** Your worker endpoint
-  ```
-  https://vite-react-shadcn-ts.roosruan32.workers.dev/api/yoco-webhook
-  ```
-  
-  **If you're using your own domain:**
-  ```
-  https://vaughnsterling.com/api/yoco-webhook
-  ```
-  Or:
-  ```
-  https://blog.swankyboyz.com/api/yoco-webhook
-  ```
+
+   ```bash
+   https://vite-react-shadcn-ts.roosruan32.workers.dev/api/yoco-webhook
+   ```
+
+   **If you're using your own domain:**
+
+   ```bash
+   https://vaughnsterling.com/api/yoco-webhook
+   ```
+
+   Or:
+
+   ```bash
+   https://blog.swankyboyz.com/api/yoco-webhook
+   ```
 
 #### Field 2: Events to Subscribe (REQUIRED)
+
 This is typically a list of checkboxes. Select these events:
 
-```
+```text
 ☑ payment.succeeded      (REQUIRED - when payment completes)
 ☑ payment.failed         (RECOMMENDED - when payment fails)
 ☑ payment.refunded       (OPTIONAL - for refunds)
@@ -78,6 +92,7 @@ This is typically a list of checkboxes. Select these events:
 ```
 
 **What each means:**
+
 - **payment.succeeded**: Customer paid successfully → triggers order update to "paid"
 - **payment.failed**: Payment declined or error → track failed payments
 - **payment.refunded**: Money returned to customer → handle refunds
@@ -86,13 +101,15 @@ This is typically a list of checkboxes. Select these events:
 **Recommendation:** Check ALL of them initially, then narrow down later if needed.
 
 #### Field 3: Event Types (if separate field)
-Some versions show:
+
 - Event Type: Select **"All Events"** or manually select the ones above
 
 #### Field 4: Active/Enabled (if shown)
+
 - Toggle or checkbox: **Enable/Active** (make sure it's ON)
 
 #### Field 5: Secret/Signing Key (optional at this point)
+
 - Some systems auto-generate this
 - Others let you set it
 - **IMPORTANT**: Copy this later after creating
@@ -118,13 +135,13 @@ Some versions show:
 
 ## Step 5: Copy the Webhook Signing Secret
 
-### After creation, find your webhook in the list:
+### After creation, find your webhook in the list
 
 1. **Look at the webhooks list**
    - Your newly created webhook should appear
 
 2. **Find the signing secret by:**
-   
+
    **Option A: Click on the webhook entry**
    - Look for a **"View Details"**, **"Edit"**, or **"Settings"** button
    - The secret will be displayed (often hidden, click to reveal)
@@ -144,12 +161,15 @@ Some versions show:
    - Or manually select and copy it
    - **Keep it safe - don't share this**
 
-### The secret will look like:
-```
+### The secret will look like
+
+```text
 whsec_live_1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p
 ```
+
 or
-```
+
+```text
 sk_live_abc123...
 ```
 
@@ -165,10 +185,10 @@ cd /workspaces/vite_react_shadcn_ts
 
 # Add the secret
 wrangler secret put YOCO_WEBHOOK_SECRET
-```
 
 When you press Enter, it will prompt:
-```
+
+```text
 ? Enter a secret value: █
 ```
 
@@ -178,7 +198,7 @@ When you press Enter, it will prompt:
 
 ### Option B: Cloudflare Dashboard Method
 
-1. Open: **https://dash.cloudflare.com**
+1. Open: **[https://dash.cloudflare.com](https://dash.cloudflare.com)**
 2. Navigate to: **Workers & Pages**
 3. Click: **services-api** (your worker)
 4. Click: **Settings** tab
@@ -201,7 +221,8 @@ wrangler secret list
 ```
 
 You should see:
-```
+
+```text
 YOCO_WEBHOOK_SECRET
 ```
 
@@ -213,6 +234,7 @@ curl https://vite-react-shadcn-ts.roosruan32.workers.dev/api/status | jq .
 ```
 
 Look for:
+
 ```json
 {
   "ok": true,
@@ -227,7 +249,7 @@ If `webhookConfigured` is `false`: Secret not set or wrong name
 
 ### Check 3: Send Test Event from YOCO Dashboard
 
-1. Go back to **https://app.yoco.com** or **https://www.yoco.com/za**
+1. Go back to **[https://app.yoco.com](https://app.yoco.com)** or **[https://www.yoco.com/za](https://www.yoco.com/za)**
 2. Log in if needed
 3. Find your webhook in the list
 4. Look for a **"Test"** button or **"Send Test Event"** button
@@ -240,7 +262,8 @@ wrangler tail
 ```
 
 You should see something like:
-```
+
+```text
 Yoco webhook received: evt_live_abc123...
 Payment recorded: charge_xyz789...
 ```
@@ -249,7 +272,7 @@ Payment recorded: charge_xyz789...
 
 ## Troubleshooting: Can't Find Webhooks Section
 
-### If you're in YOCO Dashboard but can't find Webhooks:
+### If you're in YOCO Dashboard but can't find Webhooks
 
 **Try these navigation paths:**
 
@@ -272,9 +295,11 @@ Payment recorded: charge_xyz789...
    - Use Ctrl+F to search on page for "webhook"
    - Or click help (?) icon and search for "webhooks"
 
-### Contact YOCO Support:
+### Contact YOCO Support
+
 If you still can't find it:
-- **Support Page:** https://support.yoco.com
+
+- **Support Page:** [https://support.yoco.com](https://support.yoco.com)
 - **Email:** support@yoco.com
 - **Live Chat:** Available in YOCO Dashboard (bottom right)
 
@@ -284,8 +309,8 @@ Tell them: "I need to set up a webhook at [your-url]/api/yoco-webhook"
 
 ## Quick Visual Guide
 
-```
-YOCO Dashboard (https://app.yoco.com)
+```text
+YOCO Dashboard ([https://app.yoco.com](https://app.yoco.com))
     │
     └─ [Sidebar Menu]
          ├─ Home
@@ -320,7 +345,7 @@ YOCO Dashboard (https://app.yoco.com)
 
 ## Complete Checklist
 
-- [ ] Logged into **https://app.yoco.com** (or https://www.yoco.com/za/login)
+- [ ] Logged into **[https://app.yoco.com](https://app.yoco.com)** (or [https://www.yoco.com/za/login](https://www.yoco.com/za/login))
 - [ ] Found **Settings > Webhooks** (or similar path)
 - [ ] Clicked **"+ Add Webhook"** button
 - [ ] Pasted webhook URL: `https://vite-react-shadcn-ts.roosruan32.workers.dev/api/yoco-webhook`
@@ -352,11 +377,13 @@ Once webhook is confirmed working:
 ## Support & Additional Resources
 
 **YOCO Official Docs:**
-- YOCO API: https://developer.yoco.com
-- YOCO Webhooks: https://developer.yoco.com/docs/webhooks (if available)
-- YOCO Support: https://support.yoco.com
+
+- YOCO API: [https://developer.yoco.com](https://developer.yoco.com)
+- YOCO Webhooks: [https://developer.yoco.com/docs/webhooks](https://developer.yoco.com/docs/webhooks) (if available)
+- YOCO Support: [https://support.yoco.com](https://support.yoco.com)
 
 **Your Worker Logs:**
+
 ```bash
 # Stream live logs
 wrangler tail
@@ -369,6 +396,7 @@ wrangler tail --format json > logs.txt
 ```
 
 **If Webhook Isn't Triggering:**
+
 1. Check webhook URL is exactly right (copy-paste from YOCO dashboard)
 2. Verify secret is set: `wrangler secret list`
 3. Test endpoint responds: `curl https://vite-react-shadcn-ts.roosruan32.workers.dev/api/status`
@@ -382,7 +410,7 @@ wrangler tail --format json > logs.txt
 **Common Issues & Solutions:**
 
 | Problem | Solution |
-|---------|----------|
+| ------- | --------- |
 | Can't find Webhooks section | Try Settings > Integrations > Webhooks, or search "webhook" on page |
 | "Invalid URL" error | Make sure URL is HTTPS and includes `/api/yoco-webhook` path |
 | Webhook appears but no signature secret | Click on webhook entry and look for "View Details" or settings icon |
@@ -390,6 +418,7 @@ wrangler tail --format json > logs.txt
 | Test event fails in YOCO | Check that webhook URL is 100% correct, test with curl first |
 
 **Still stuck? Check:**
+
 1. Worker logs: `wrangler tail`
 2. YOCO dashboard webhook delivery logs
 3. Cloudflare dashboard → Workers → services-api → Real-time logs

@@ -208,8 +208,7 @@ const services: Record<string, { name: string; price: number; currency: string }
 };
 
 async function handleCreateCheckout(request: Request, env: WorkerEnv): Promise<Response> {
-  // This legacy endpoint was previously used to initialize Paystack checkouts.
-  // It is now deprecated. Use `/api/create-yoco-charge` instead.
+  // Legacy placeholder; YOCO charges now start through `/api/create-yoco-charge`.
   return jsonResponse({ error: 'Deprecated endpoint. Use /api/create-yoco-charge' }, 400);
 }
 
@@ -535,7 +534,7 @@ async function handleGithubStart(request: Request, env: WorkerEnv): Promise<Resp
   const state = Math.random().toString(36).substring(2);
   // store state in KV with TTL (5 minutes)
   try {
-    if (env.OAUTH_KV) await env.OAUTH_KV.put(`gh_state:${state}`, '1', { expirationTtl: 300 });
+    if (env.OAUTH_KV) await env.OAUTH_KV.put(`gh_state:${state}`, '1');
   } catch (err: unknown) {
     console.warn('Failed to store state in KV', err);
   }
@@ -594,15 +593,15 @@ async function handleGithubCallback(request: Request, env: WorkerEnv): Promise<R
   }
 
   // issue JWT and redirect back to admin UI
-  const jwtSecret = env.ADMIN_JWT_SECRET;
+  const jwtSecret = env.ADMIN_JWT_SECRET || '';
   const jwtExpiry = Number(env.ADMIN_JWT_EXPIRES || '86400');
   const token = await signJwt({ role: 'admin', username: login, provider: 'github' }, jwtSecret, jwtExpiry);
   const redirectTo = `${request.headers.get('origin') || 'http://localhost:5173'}/admin?token=${encodeURIComponent(token)}`;
   return Response.redirect(redirectTo, 302);
 }
 
-// Legacy Stripe webhook handling removed — Paystack is the supported payments provider now.
-// If you need Stripe support in future, reintroduce Stripe-specific handlers and signature verification. 
+// Legacy gateway-specific handlers were removed earlier; YOCO is the supported payment provider now.
+// Reintroduce other gateways only once their webhook requirements and signing checks are fully implemented.
 
 function secureCompare(a: string, b: string) {
   if (a.length !== b.length) return false;
@@ -792,16 +791,16 @@ async function handleYocoWebhook(request: Request, env: WorkerEnv): Promise<Resp
           headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Prefer: 'return=representation' },
           body: JSON.stringify([{
             order_id: orderId ? Number(orderId) : null,
-            yoco_charge_id: chargeId,
-            yoco_transaction_id: transactionId,
-            amount: amount || 0,
-            currency,
+            yoco_charge_id: chargeId ? String(chargeId) : null,
+            yoco_transaction_id: transactionId ? String(transactionId) : null,
+            amount: amount ? Number(amount) : 0,
+            currency: String(currency || 'ZAR'),
             status: 'succeeded',
-            raw: event
+            raw: typeof event === 'object' && event !== null ? event : {}
           }])
         };
         await retryFetchJson(`${supabaseUrl}/rest/v1/payments`, paymentInsertOptions, 4, 200);
-      } catch (err) {
+      } catch (err: unknown) {
         console.error('Error inserting YOCO payment:', err);
         await sendMonitoringAlert(env, { level: 'error', action: 'insert_yoco_payment', error: String(err), event });
       }
@@ -810,13 +809,13 @@ async function handleYocoWebhook(request: Request, env: WorkerEnv): Promise<Resp
       try {
         const patchOptions: RequestInit = { method: 'PATCH', headers: { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }, body: JSON.stringify({ status: 'paid', updated_at: new Date().toISOString() }) };
         if (orderId) {
-          await retryFetchJson(`${supabaseUrl}/rest/v1/orders?id=eq.${orderId}`, patchOptions, 4, 200);
+          await retryFetchJson(`${supabaseUrl}/rest/v1/orders?id=eq.${String(orderId)}`, patchOptions, 4, 200);
         } else if (chargeId) {
-          await retryFetchJson(`${supabaseUrl}/rest/v1/orders?yoco_charge_id=eq.${encodeURIComponent(chargeId)}`, patchOptions, 4, 200);
+          await retryFetchJson(`${supabaseUrl}/rest/v1/orders?yoco_charge_id=eq.${encodeURIComponent(String(chargeId))}`, patchOptions, 4, 200);
         }
       } catch (err: unknown) {
         console.error('Failed to update order status after YOCO webhook:', err);
-        await sendMonitoringAlert(env, { level: 'error', action: 'update_order_yoco', error: String(err), chargeId, orderId });
+        await sendMonitoringAlert(env, { level: 'error', action: 'update_order_yoco', error: String(err), chargeId: String(chargeId || ''), orderId: String(orderId || '') });
       }
 
       return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
@@ -833,6 +832,6 @@ async function handleYocoWebhook(request: Request, env: WorkerEnv): Promise<Resp
 
 // ----------------- End YOCO handlers -----------------
 
-// Paystack and PayPal webhook handlers removed — These payment providers are deprecated.
-// YOCO is the primary payment provider. See handleYocoWebhook for the current webhook implementation.
+// Legacy gateway-specific webhook handlers were removed; YOCO is the only supported payment provider.
+// Keep handleYocoWebhook as the canonical webhook entrypoint for YOCO events.
 
