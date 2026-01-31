@@ -80,11 +80,6 @@ async function run() {
   const yocoWebhookSecret = await rl.question('YOCO Webhook Secret (YOCO_WEBHOOK_SECRET): ');
   const supabaseKey = await rl.question('Supabase Service Role Key (SUPABASE_SERVICE_ROLE_KEY): ');
   const supabaseUrl = await rl.question('Supabase URL (SUPABASE_URL): ');
-  // PayPal credentials (optional) — kept for compatibility
-  const paypalClientId = await rl.question('PayPal Client ID (PAYPAL_CLIENT_ID, sandbox): ');
-  const paypalSecret = await rl.question('PayPal Secret (PAYPAL_SECRET, sandbox): ');
-  const paypalWebhookId = await rl.question('PayPal Webhook ID (PAYPAL_WEBHOOK_ID, sandbox): ');
-  const paypalMode = await rl.question('PayPal Mode (sandbox|live, default sandbox): ') || 'sandbox';
   const adminSecret = await rl.question('Admin Secret for admin UI (ADMIN_SECRET): ');
   const sentryDsn = await rl.question('Sentry DSN (optional, press enter to skip): ');
   const monitoringWebhook = await rl.question('Monitoring Webhook URL (optional): ');
@@ -111,10 +106,6 @@ async function run() {
   if (yocoApiUrl) await updateWranglerTomlVars({ YOCO_API_URL: yocoApiUrl });
   if (yocoWebhookSecret) await setWranglerSecret('YOCO_WEBHOOK_SECRET', yocoWebhookSecret);
   if (supabaseKey) await setWranglerSecret('SUPABASE_SERVICE_ROLE_KEY', supabaseKey);
-  if (paypalClientId) await setWranglerSecret('PAYPAL_CLIENT_ID', paypalClientId);
-  if (paypalSecret) await setWranglerSecret('PAYPAL_SECRET', paypalSecret);
-  if (paypalWebhookId) await setWranglerSecret('PAYPAL_WEBHOOK_ID', paypalWebhookId);
-  if (paypalMode) await updateWranglerTomlVars({ PAYPAL_MODE: paypalMode });
   if (adminSecret) await setWranglerSecret('ADMIN_SECRET', adminSecret);
 
   // Optionally set SUPABASE_URL as secret or var
@@ -185,30 +176,6 @@ async function run() {
       console.log('Published worker.');
     } catch (err) {
       console.error('Publish failed:', err.message || err);
-    }
-  }
-
-  // Optionally dispatch the GitHub workflow to provision PayPal webhook
-  const runProvision = await yesNoPrompt('Run the GitHub workflow to provision PayPal webhook now via `gh` CLI (manual workflow)?', false);
-  if (runProvision) {
-    try {
-      await runCmd('gh', ['workflow', 'run', 'provision-paypal-webhook.yml', '-f', `mode=${paypalMode || 'sandbox'}`]);
-      console.log('Workflow dispatched. You can view it in the Actions tab.');
-    } catch (err) {
-      console.error('Failed to dispatch workflow via gh. Ensure `gh` is installed and authenticated with repo access.', err.message || err);
-    }
-
-    const watch = await yesNoPrompt('Watch the workflow run to completion using `gh run watch`? (requires gh)', false);
-    if (watch) {
-      try {
-        await runCmd('gh', ['run', 'watch', '--exit-status']);
-        console.log('Workflow run completed.');
-      } catch (err) {
-        console.error('Error watching workflow run:', err.message || err);
-        console.log('Check the Actions tab for details.');
-      }
-    } else {
-      console.log('You can monitor the run in GitHub Actions or run `gh run list --workflow=provision-paypal-webhook.yml` to see recent runs.');
     }
   }
 
