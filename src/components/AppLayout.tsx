@@ -7,8 +7,14 @@ import { Globe, ShoppingBag, Plane, User, ChevronDown, ExternalLink, X } from 'l
 type SiteType = 'swankyboyz' | 'vaughnsterlingtours' | 'vaughnsterling';
 
 const AppLayout: React.FC = () => {
-  const [activeSite, setActiveSite] = useState<SiteType>('swankyboyz');
-  const [showSiteSelector, setShowSiteSelector] = useState(true);
+  const [activeSite, setActiveSite] = useState<SiteType>(() => {
+    const host = window.location.hostname;
+    if (host.includes('vaughnsterlingtours')) return 'vaughnsterlingtours';
+    if (host.includes('vaughnsterling')) return 'vaughnsterling';
+    if (host.includes('swankyboyz')) return 'swankyboyz';
+    return 'vaughnsterling'; // Default
+  });
+  const [showSiteSelector, setShowSiteSelector] = useState(false);
 
   const sites = [
     {

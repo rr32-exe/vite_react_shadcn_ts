@@ -60,7 +60,8 @@ interface KVNamespace {
 }
 
 interface WorkerEnv {
-  [key: string]: string | undefined | KVNamespace;
+  [key: string]: string | undefined | KVNamespace | Fetcher;
+  ASSETS: Fetcher;
   YOCO_API_URL?: string;
   YOCO_SECRET_KEY?: string;
   YOCO_WEBHOOK_SECRET?: string;
