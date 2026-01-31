@@ -7,6 +7,7 @@ This Worker exposes three endpoints under `/api/*` that are equivalent to the De
 - POST /api/newsletter-subscribe
 
 Quick overview:
+
 - Uses YOCO REST API to initialize transactions (no Node-only SDK required).
 - Uses Supabase REST (PostgREST) and the Service Role key to insert/upsert rows.
 - CORS ready and returns JSON responses.
@@ -17,33 +18,41 @@ Quick overview:
 
 1. Install wrangler v3:
 
-   npm install -g wrangler
+```bash
+npm install -g wrangler
+```
 
 2. Configure `wrangler.toml`:
    - Set `account_id` in `wrangler.toml` or pass it to publish.
 
 3. Add secrets and variables:
 
-   # YOCO secret
-   wrangler secret put YOCO_SECRET_KEY
+```bash
+# YOCO secret
+wrangler secret put YOCO_SECRET_KEY
 
-   # Supabase service role key (secret)
-   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+# Supabase service role key (secret)
+wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 
-   # YOCO webhook secret (optional)
-   wrangler secret put YOCO_WEBHOOK_SECRET
+# YOCO webhook secret (optional)
+wrangler secret put YOCO_WEBHOOK_SECRET
 
-   # SUPABASE_URL can be stored as a plain variable (not secret) or set in the dashboard
-   # Example (dashboard or `wrangler` UI recommended for url):
-   # wrangler env put --env production SUPABASE_URL "https://xyz.supabase.co"
+# SUPABASE_URL can be stored as a plain variable (not secret) or set in the dashboard
+# Example (dashboard or wrangler UI recommended for url):
+# wrangler env put --env production SUPABASE_URL "https://xyz.supabase.co"
+```
 
 4. Publish the Worker (workers.dev):
 
-   wrangler publish
+```bash
+wrangler publish
+```
 
 Or publish to a specific account id:
 
-   wrangler publish --account-id <ACCOUNT_ID>
+```bash
+wrangler publish --account-id YOUR_ACCOUNT_ID
+```
 
 ---
 
@@ -51,21 +60,27 @@ Or publish to a specific account id:
 
 Create checkout (sample):
 
-curl -X POST "https://<your-subdomain>.workers.dev/api/create-checkout" \
+```bash
+curl -X POST "https://YOUR_SUBDOMAIN.workers.dev/api/create-checkout" \
   -H "Content-Type: application/json" \
   -d '{"serviceId":"s1","customerName":"Jane Doe","customerEmail":"jane@example.com"}'
+```
 
 Contact submit:
 
-curl -X POST "https://<your-subdomain>.workers.dev/api/contact-submit" \
+```bash
+curl -X POST "https://YOUR_SUBDOMAIN.workers.dev/api/contact-submit" \
   -H "Content-Type: application/json" \
   -d '{"name":"Jane","email":"jane@example.com","message":"Hello!"}'
+```
 
 Newsletter subscribe:
 
-curl -X POST "https://<your-subdomain>.workers.dev/api/newsletter-subscribe" \
+```bash
+curl -X POST "https://YOUR_SUBDOMAIN.workers.dev/api/newsletter-subscribe" \
   -H "Content-Type: application/json" \
   -d '{"email":"jane@example.com","site":"vaughnsterling"}'
+```
 
 ---
 
@@ -83,10 +98,12 @@ YOCO is the only payment provider supported by this Worker, and Vaughn Sterling 
 - `POST /api/yoco-webhook` — optional webhook endpoint to receive Yoco payment events. Set `YOCO_WEBHOOK_SECRET` to validate incoming webhooks if your Yoco account signs webhooks.
 
 Setup:
+
 - Add `YOCO_API_URL`, `YOCO_SECRET_KEY`, and `YOCO_WEBHOOK_SECRET` (if used) via `wrangler secret put` or in the Cloudflare dashboard.
-- Configure the Yoco webhook to point at `https://<your-subdomain>.workers.dev/api/yoco-webhook`.
+- Configure the Yoco webhook to point at [https://YOUR_SUBDOMAIN.workers.dev/api/yoco-webhook](https://YOUR_SUBDOMAIN.workers.dev/api/yoco-webhook).
 
 Notes:
+
 - Yoco's API shapes vary; this integration attempts a best-effort generic flow and returns the charge ID and a `checkoutUrl` if provided by the API. If your Yoco account uses a different endpoint or payload, set `YOCO_API_URL` accordingly and adjust the worker code to match your provider's response format.
 - The DB schema includes `yoco_charge_id` and `yoco_transaction_id` fields; you'll need to run the Apply DB Schema workflow after setting your `DATABASE_URL`.
 
@@ -99,17 +116,23 @@ A secure admin interface is available under `/api/admin/*` and requires the `ADM
 
 Set the secret with:
 
-  wrangler secret put ADMIN_SECRET
+```bash
+wrangler secret put ADMIN_SECRET
+```
 
 You can also use the interactive installer to set secrets and vars:
 
-  npm run setup:workers
+```bash
+npm run setup:workers
+```
 
-If you want GitHub OAuth for admin login, register an OAuth app at https://github.com/settings/developers and set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` (and optionally `ADMIN_GITHUB_USERS` or `ADMIN_GITHUB_ORGS` to restrict who can log in). The OAuth callback URL must be `https://<your-host>/api/auth/github/callback`.
+If you want GitHub OAuth for admin login, register an OAuth app at [https://github.com/settings/developers](https://github.com/settings/developers) and set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` (and optionally `ADMIN_GITHUB_USERS` or `ADMIN_GITHUB_ORGS` to restrict who can log in). The OAuth callback URL must be [https://<your-host>/api/auth/github/callback](https://<your-host>/api/auth/github/callback).
 
 We now store the OAuth `state` in a KV namespace `OAUTH_KV` to prevent replay; create one with:
 
-  wrangler kv:namespace create "OAUTH_KV"
+```bash
+wrangler kv:namespace create "OAUTH_KV"
+```
 
 Then set the namespace id in `wrangler.toml` (or run the interactive installer and paste the id when prompted).
 

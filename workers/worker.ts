@@ -64,7 +64,7 @@ interface Fetcher {
 }
 
 interface WorkerEnv {
-  [key: string]: any;
+  [key: string]: string | undefined | KVNamespace | Fetcher | unknown;
   ASSETS: Fetcher;
   YOCO_API_URL?: string;
   YOCO_SECRET_KEY?: string;
@@ -744,7 +744,8 @@ async function handleYocoWebhook(request: Request, env: WorkerEnv): Promise<Resp
     const type = eventObj.type || eventObj.event || (eventObj.data && typeof eventObj.data === 'object' && (eventObj.data as Record<string, unknown>).event) || null;
     const data = (eventObj.data || eventObj.resource || {}) as Record<string, unknown>;
     const chargeId = data.id || data.charge_id || data.chargeId || null;
-    const transactionId = (data.transaction && typeof data.transaction === 'object' && (data.transaction as Record<string, unknown>).id) || data.transaction_id || data.transactionId || null;
+    const transactionIdRaw = (data.transaction && typeof data.transaction === 'object' && (data.transaction as Record<string, unknown>).id) || data.transaction_id || data.transactionId || null;
+    const transactionId = (typeof transactionIdRaw === 'string' || typeof transactionIdRaw === 'number' || typeof transactionIdRaw === 'boolean') ? String(transactionIdRaw) : null;
     const amount = data.amount || (data.amount_in_cents) || 0;
     const currency = data.currency || 'ZAR';
     const metadataObj = data.metadata && typeof data.metadata === 'object' ? (data.metadata as Record<string, unknown>) : {};

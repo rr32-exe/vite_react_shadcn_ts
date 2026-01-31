@@ -300,7 +300,7 @@ Payment recorded: charge_xyz789...
 If you still can't find it:
 
 - **Support Page:** [https://support.yoco.com](https://support.yoco.com)
-- **Email:** support@yoco.com
+- **Email:** <support@yoco.com>
 - **Live Chat:** Available in YOCO Dashboard (bottom right)
 
 Tell them: "I need to set up a webhook at [your-url]/api/yoco-webhook"
@@ -328,7 +328,7 @@ YOCO Dashboard ([https://app.yoco.com](https://app.yoco.com))
             ├─ [+ Add Webhook] Button ◄─── CLICK HERE
             │
             └─ [Webhook Form]
-               ├─ Webhook URL: https://vite-react-shadcn-ts.roosruan32.workers.dev/api/yoco-webhook
+               ├─ Webhook URL: [https://vite-react-shadcn-ts.roosruan32.workers.dev/api/yoco-webhook](https://vite-react-shadcn-ts.roosruan32.workers.dev/api/yoco-webhook)
                ├─ Events: ☑ payment.succeeded
                │           ☑ payment.failed
                │           ☑ payment.refunded

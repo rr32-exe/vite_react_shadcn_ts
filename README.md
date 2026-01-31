@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:8080 in your browser.
+Open [http://localhost:8080](http://localhost:8080) in your browser.
 
 ### Build for Production
 
@@ -71,6 +71,7 @@ npm run setup:workers
 **1.4 Add Variables (Plain Text Configuration):**
 
 Option A: Via CLI
+
 ```bash
 wrangler env production env put SUPABASE_URL "https://YOUR_PROJECT.supabase.co"
 wrangler env production env put YOCO_API_URL "https://online.yoco.com"
@@ -78,6 +79,7 @@ wrangler env production env put YOCO_MODE "live"  # or "test"
 ```
 
 Option B: Via Cloudflare Dashboard
+
 - Go to Workers > Your Worker > Settings > Variables
 - Add the variables listed above
 
@@ -100,7 +102,7 @@ id = "<NAMESPACE_ID>"
 wrangler publish
 ```
 
-You'll get a worker URL like: `https://services-api.YOUR_ACCOUNT_ID.workers.dev`
+You'll get a worker URL like: [https://services-api.YOUR_ACCOUNT_ID.workers.dev](https://services-api.YOUR_ACCOUNT_ID.workers.dev)
 
 **Note:** Save this URL for the frontend configuration.
 
@@ -139,15 +141,15 @@ wrangler pages publish dist --project-name my-project
 
 **2.3 Get Your Pages URL:**
 
-After deployment, you'll get a URL like: `https://my-project.pages.dev`
+After deployment, you'll get a URL like: [https://my-project.pages.dev](https://my-project.pages.dev)
 
 ### Step 3: Configure YOCO Webhook
 
 1. Log in to your YOCO merchant dashboard
 2. Go to **Settings > Webhooks**
 3. Add a new webhook with:
-   - **URL:** `https://services-api.YOUR_ACCOUNT_ID.workers.dev/api/yoco-webhook`
-   - **Events:** `payment.succeeded`, `payment.failed` (or all events)
+  - **URL:** [https://services-api.YOUR_ACCOUNT_ID.workers.dev/api/yoco-webhook](https://services-api.YOUR_ACCOUNT_ID.workers.dev/api/yoco-webhook)
+  - **Events:** `payment.succeeded`, `payment.failed` (or all events)
 4. Copy the webhook signing secret and set it as `YOCO_WEBHOOK_SECRET` in your Worker
 
 ### Step 4: Verify Deployment
