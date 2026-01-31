@@ -3,6 +3,18 @@ main = "workers/worker.ts"
 compatibility_date = "2026-01-15"
 workers_dev = true
 
+# Routes for the 3 sites with subdomains
+routes = [
+  { pattern = "swankyboyz.com/*", zone_name = "swankyboyz.com" },
+  { pattern = "www.swankyboyz.com/*", zone_name = "swankyboyz.com" },
+  { pattern = "blog.swankyboyz.com/*", zone_name = "swankyboyz.com" },
+  { pattern = "vaughnsterlingtours.com/*", zone_name = "vaughnsterlingtours.com" },
+  { pattern = "www.vaughnsterlingtours.com/*", zone_name = "vaughnsterlingtours.com" },
+  { pattern = "blog.vaughnsterlingtours.com/*", zone_name = "vaughnsterlingtours.com" },
+  { pattern = "vaughnsterling.com/*", zone_name = "vaughnsterling.com" },
+  { pattern = "www.vaughnsterling.com/*", zone_name = "vaughnsterling.com" }
+]
+
 # Set your Cloudflare account ID here to avoid interactive prompts in CI:
  account_id = "0c8043131da0dc9e3071f64210bdc0e0"
 
@@ -11,13 +23,3 @@ workers_dev = true
 
 [assets]
   directory = "./dist"
-
-# Routes for the 3 sites with subdomains
-routes = [
-  { pattern = "blog.swankyboyz.com/*", zone_name = "swankyboyz.com" },
-  { pattern = "blog.vaughnsterlingtours.com/*", zone_name = "vaughnsterlingtours.com" },
-  { pattern = "vaughnsterling.com/*", zone_name = "vaughnsterling.com" },
-  { pattern = "www.vaughnsterling.com/*", zone_name = "vaughnsterling.com" },
-  { pattern = "swankyboyz.com/*", zone_name = "swankyboyz.com" },
-  { pattern = "vaughnsterlingtours.com/*", zone_name = "vaughnsterlingtours.com" }
-]
