@@ -59,8 +59,12 @@ interface KVNamespace {
   delete(key: string): Promise<void>;
 }
 
+interface Fetcher {
+  fetch(request: Request | string, init?: RequestInit): Promise<Response>;
+}
+
 interface WorkerEnv {
-  [key: string]: string | undefined | KVNamespace | Fetcher;
+  [key: string]: any;
   ASSETS: Fetcher;
   YOCO_API_URL?: string;
   YOCO_SECRET_KEY?: string;
@@ -119,15 +123,15 @@ export default {
 
     // Route to correct site based on domain/subdomain (skip for API calls)
     if (!url.pathname.startsWith('/api/')) {
-      if (host.includes('blog.swankyboyz.com') || (host.includes('swankyboyz.com') && !host.includes('blog'))) {
-        return serveReactApp('swankyboyz', request);
+      // Serve static assets from the 'dist' directory via the ASSETS binding
+      const assetResponse = await env.ASSETS.fetch(request.clone());
+      if (assetResponse.status !== 404) {
+        return assetResponse;
       }
-      if (host.includes('blog.vaughnsterlingtours.com') || (host.includes('vaughnsterlingtours.com') && !host.includes('blog'))) {
-        return serveReactApp('vaughnsterlingtours', request);
-      }
-      if (host.includes('vaughnsterling.com')) {
-        return serveReactApp('vaughnsterling', request);
-      }
+      
+      // For SPA routing, fall back to index.html for all non-asset, non-API requests
+      const indexUrl = new URL('/', request.url);
+      return env.ASSETS.fetch(new Request(indexUrl, request));
     }
 
     try {
