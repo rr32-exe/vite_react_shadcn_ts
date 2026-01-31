@@ -29,8 +29,8 @@ routes = [
 YOCO_API_URL = "https://online.yoco.com"
 YOCO_MODE = "test" # change to "live" when ready
 
-# Required for Supabase integration
-SUPABASE_URL = "https://snfnfexpmtbouxqgfgcm.supabase.co"
+# Required for Supabase/DatabasePad integration
+SUPABASE_URL = "https://awhyajamokxzhmjlzytt.databasepad.com"
 
 # Optional settings
 RATE_LIMIT_MAX = "60"

@@ -17,6 +17,11 @@ const VaughnSterling: React.FC = () => {
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [paymentCancelled, setPaymentCancelled] = useState(false);
 
+  // Set document title
+  useEffect(() => {
+    document.title = 'Vaughn Sterling | AI-Powered Niche Sites & Freelance Services';
+  }, []);
+
   // Check URL params for payment status
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
