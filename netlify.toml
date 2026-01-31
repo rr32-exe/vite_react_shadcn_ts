@@ -1,0 +1,32 @@
+# Netlify configuration for React + Cloudflare Worker deployment
+# This project uses Cloudflare Workers for the backend API,
+# so we only deploy the frontend via Netlify and skip worker deployment
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Redirect all API calls to the Cloudflare Worker
+[[redirects]]
+  from = "/api/*"
+  to = "https://services-api.0c8043131da0dc9e3071f64210bdc0e0.workers.dev/api/:splat"
+  status = 200
+  force = true
+
+# SPA fallback for client-side routing
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[context.production]
+  command = "npm run build"
+  publish = "dist"
+
+[context.preview]
+  command = "npm run build"
+  publish = "dist"
+
+# Environment variables for frontend build
+[build.environment]
+  VITE_API_URL = "https://services-api.0c8043131da0dc9e3071f64210bdc0e0.workers.dev"
