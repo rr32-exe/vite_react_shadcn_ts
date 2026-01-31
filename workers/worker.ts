@@ -190,7 +190,8 @@ export default {
       return new Response('Not Found', { status: 404 });
     } catch (err: unknown) {
       console.error('Uncaught error:', err);
-      try { await sendToSentry(err, env); } catch(e) { console.error('Sentry send failed', e); }
+      const errorOrString = err instanceof Error ? err : new Error(String(err));
+      try { await sendToSentry(errorOrString, env); } catch(e) { console.error('Sentry send failed', e); }
       const errorMsg = err instanceof Error ? err.message : String(err);
       return jsonResponse({ error: errorMsg || 'Internal server error' }, 500);
     }
@@ -487,7 +488,7 @@ async function handleAdminRequest(request: Request, env: WorkerEnv): Promise<Res
       if (path === '/orders.csv') {
         // Return CSV
         const header = ['id','customer_name','customer_email','service_id','service_name','total_amount','deposit_amount','currency','status','stripe_session_id','yoco_charge_id','created_at'];
-        const csv = [header.join(',')].concat(rows.map((r: any) => header.map(h => `"${String(r[h] ?? '')}"`).join(','))).join('\n');
+        const csv = [header.join(',')].concat(rows.map((r: Record<string, unknown>) => header.map(h => `"${String(r[h] ?? '')}"`).join(','))).join('\n');
         return new Response(csv, { headers: { 'Content-Type': 'text/csv', ...CORS_HEADERS } });
       }
       return jsonResponse({ success: true, data: rows });
@@ -506,7 +507,7 @@ async function handleAdminRequest(request: Request, env: WorkerEnv): Promise<Res
     }
 
     return jsonResponse({ error: 'Unknown admin path' }, 400);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Admin handler error', err);
     await sendMonitoringAlert(env, { level: 'error', action: 'admin', error: String(err) });
     return jsonResponse({ error: 'Internal error' }, 500);
@@ -528,13 +529,14 @@ async function handleAdminLogin(request: Request, env: WorkerEnv): Promise<Respo
 }
 
 async function handleGithubStart(request: Request, env: WorkerEnv): Promise<Response> {
-  const clientId = env.GITHUB_CLIENT_ID;
-  const redirectUri = `${request.headers.get('origin')}/api/auth/github/callback`;
+  const clientId = env.GITHUB_CLIENT_ID || '';
+  const origin = request.headers.get('origin') || 'http://localhost:5173';
+  const redirectUri = `${origin}/api/auth/github/callback`;
   const state = Math.random().toString(36).substring(2);
   // store state in KV with TTL (5 minutes)
   try {
     if (env.OAUTH_KV) await env.OAUTH_KV.put(`gh_state:${state}`, '1', { expirationTtl: 300 });
-  } catch (err) {
+  } catch (err: unknown) {
     console.warn('Failed to store state in KV', err);
   }
   const url = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}&scope=read:user%20read:org`;
@@ -753,15 +755,18 @@ async function handleYocoWebhook(request: Request, env: WorkerEnv): Promise<Resp
 
   try {
     // event shapes vary between providers - best-effort extraction
-    const type = event.type || event.event || (event.data && event.data.event) || null;
-    const data = event.data || event.resource || {};
+    const eventObj = event as Record<string, unknown>;
+    const type = eventObj.type || eventObj.event || (eventObj.data && typeof eventObj.data === 'object' && (eventObj.data as Record<string, unknown>).event) || null;
+    const data = (eventObj.data || eventObj.resource || {}) as Record<string, unknown>;
     const chargeId = data.id || data.charge_id || data.chargeId || null;
-    const transactionId = (data.transaction && data.transaction.id) || data.transaction_id || data.transactionId || null;
+    const transactionId = (data.transaction && typeof data.transaction === 'object' && (data.transaction as Record<string, unknown>).id) || data.transaction_id || data.transactionId || null;
     const amount = data.amount || (data.amount_in_cents) || 0;
     const currency = data.currency || 'ZAR';
-    const orderId = data.metadata?.order_id ? Number(data.metadata.order_id) : (data.metadata && data.metadata.order_id ? Number(data.metadata.order_id) : null);
+    const metadataObj = data.metadata && typeof data.metadata === 'object' ? (data.metadata as Record<string, unknown>) : {};
+    const orderId = metadataObj.order_id ? Number(metadataObj.order_id) : null;
+    const status = data.status as string | undefined;
 
-    const succeeded = (type && (type.endsWith('succeeded') || type.endsWith('completed'))) || (data.status && (data.status === 'succeeded' || data.status === 'paid' || data.status === 'successful'));
+    const succeeded = (type && (String(type).endsWith('succeeded') || String(type).endsWith('completed'))) || (status && (status === 'succeeded' || status === 'paid' || status === 'successful'));
 
     if (succeeded) {
       // Idempotency: has this transaction been recorded?
