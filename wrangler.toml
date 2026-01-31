@@ -23,3 +23,16 @@ routes = [
 
 [assets]
   directory = "./dist"
+
+[vars]
+# Required for Yoco integration
+YOCO_API_URL = "https://online.yoco.com"
+YOCO_MODE = "test" # change to "live" when ready
+
+# Required for Supabase integration
+SUPABASE_URL = "https://snfnfexpmtbouxqgfgcm.supabase.co"
+
+# Optional settings
+RATE_LIMIT_MAX = "60"
+RATE_LIMIT_WINDOW = "60"
+WORKER_ENV = "production"
