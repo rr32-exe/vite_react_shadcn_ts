@@ -90,6 +90,7 @@ wrangler kv:namespace create "OAUTH_KV" --preview false
 ```
 
 Then add the namespace binding to `wrangler.toml`:
+
 ```toml
 [[kv_namespaces]]
 binding = "OAUTH_KV"
@@ -148,8 +149,8 @@ After deployment, you'll get a URL like: [https://my-project.pages.dev](https://
 1. Log in to your YOCO merchant dashboard
 2. Go to **Settings > Webhooks**
 3. Add a new webhook with:
-  - **URL:** [https://services-api.YOUR_ACCOUNT_ID.workers.dev/api/yoco-webhook](https://services-api.YOUR_ACCOUNT_ID.workers.dev/api/yoco-webhook)
-  - **Events:** `payment.succeeded`, `payment.failed` (or all events)
+   - **URL:** [https://services-api.YOUR_ACCOUNT_ID.workers.dev/api/yoco-webhook](https://services-api.YOUR_ACCOUNT_ID.workers.dev/api/yoco-webhook)
+   - **Events:** `payment.succeeded`, `payment.failed` (or all events)
 4. Copy the webhook signing secret and set it as `YOCO_WEBHOOK_SECRET` in your Worker
 
 ### Step 4: Verify Deployment
@@ -219,7 +220,7 @@ CREATE INDEX idx_payments_yoco_charge_id ON public.payments(yoco_charge_id);
 ## 🔐 Environment Variables Reference
 
 | Variable | Type | Required | Description |
-|----------|------|----------|-------------|
+| -------- | ---- | -------- | ----------- |
 | `VITE_API_URL` | Frontend | Yes | Worker URL: `https://services-api.ACCOUNT_ID.workers.dev` |
 | `YOCO_API_URL` | Worker | Yes | YOCO API endpoint (usually `https://online.yoco.com`) |
 | `YOCO_SECRET_KEY` | Worker (Secret) | Yes | YOCO API secret key |

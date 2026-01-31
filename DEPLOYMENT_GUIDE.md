@@ -36,7 +36,6 @@
 6. **Verify Routes Added**
    - You should see all 4 routes listed under "Routes"
 
-
 ### Method B: Using DNS CNAME Records (Alternative)
 
 If you prefer DNS routing instead:
@@ -60,7 +59,7 @@ If you prefer DNS routing instead:
      - **Name:** `@` (or your domain apex)
      - **Value:** `vite-react-shadcn-ts.roosruan32.workers.dev`
      - **Proxy Status:** Proxied
-   
+
    - Add CNAME for www:
      - **Name:** `www`
      - **Value:** `vite-react-shadcn-ts.roosruan32.workers.dev`
@@ -172,7 +171,7 @@ wrangler env vars set ADMIN_USERNAME "admin"
 wrangler env vars set ADMIN_JWT_EXPIRES "86400"
 ```
 
-### Method B: Using Cloudflare Dashboard
+### Method B: Using Cloudflare Dashboard (Variables)
 
 1. **Navigate to Vars**
    - Cloudflare Dashboard → **Workers & Pages** → **services-api**
@@ -185,7 +184,8 @@ wrangler env vars set ADMIN_JWT_EXPIRES "86400"
    - Click **Add Variable**
 
 3. **Recommended Variables to Add**
-   ```
+
+   ```text
    Variable Name              Example Value                          Required?
    ─────────────────────────────────────────────────────────────────────────
    SUPABASE_URL               https://xyz.supabase.co                Yes
@@ -272,7 +272,7 @@ wrangler tail --status error
 ### Required Configuration
 
 | Variable | Type | Purpose | Example |
-|----------|------|---------|---------|
+| -------- | ---- | ------- | ------- |
 | `SUPABASE_URL` | Variable/Secret | Database URL | `https://xyz.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Secret | Database auth key | `eyJhbG...` |
 | `YOCO_SECRET_KEY` | Secret | YOCO API key | `sk_live_...` |
@@ -282,7 +282,7 @@ wrangler tail --status error
 ### Optional Configuration
 
 | Variable | Type | Purpose | Default |
-|----------|------|---------|---------|
+| -------- | ---- | ------- | ------- |
 | `YOCO_WEBHOOK_SECRET` | Secret | Webhook validation | (none) |
 | `ADMIN_JWT_SECRET` | Secret | Token signing | (none) |
 | `RATE_LIMIT_MAX` | Variable | Max requests/window | `60` |
@@ -295,19 +295,23 @@ wrangler tail --status error
 ## Part 7: Troubleshooting
 
 ### "Route already exists" Error
+
 - Each route must be unique; check you're not adding duplicates
 - Routes are per-zone, so same path can exist on different zones
 
 ### "Secret not found" Error
+
 - Deploy the worker after adding secrets: `npm run deploy:workers`
 - Secrets take ~30 seconds to propagate
 
 ### Domain Not Resolving
+
 - Verify DNS/route added in Cloudflare Dashboard
 - Check domain is in the correct Cloudflare account
 - Wait 5-10 minutes for DNS to propagate
 
 ### API Returning 500 Errors
+
 - Check worker logs: `wrangler tail --status error`
 - Verify secrets are set: `wrangler secret list`
 - Ensure SUPABASE_URL and credentials are correct
@@ -332,6 +336,7 @@ wrangler tail --status error
 ## Need More Help?
 
 For detailed Cloudflare docs:
-- Workers Routes: https://developers.cloudflare.com/workers/wrangler/configuration/sites/
-- Secrets Management: https://developers.cloudflare.com/workers/wrangler/configuration/environment-variables/
-- DNS CNAME Setup: https://developers.cloudflare.com/dns/manage-dns-records/reference/dns-record-types/cname/
+
+- Workers Routes: [https://developers.cloudflare.com/workers/wrangler/configuration/sites/](https://developers.cloudflare.com/workers/wrangler/configuration/sites/)
+- Secrets Management: [https://developers.cloudflare.com/workers/wrangler/configuration/environment-variables/](https://developers.cloudflare.com/workers/wrangler/configuration/environment-variables/)
+- DNS CNAME Setup: [https://developers.cloudflare.com/dns/manage-dns-records/reference/dns-record-types/cname/](https://developers.cloudflare.com/dns/manage-dns-records/reference/dns-record-types/cname/)
