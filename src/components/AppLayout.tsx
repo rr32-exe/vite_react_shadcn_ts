@@ -6,14 +6,31 @@ import { Globe, ShoppingBag, Plane, User, ChevronDown, ExternalLink, X } from 'l
 
 type SiteType = 'swankyboyz' | 'vaughnsterlingtours' | 'vaughnsterling';
 
+// Detect site from hostname
+const detectSite = (): SiteType => {
+  const host = window.location.hostname.toLowerCase();
+  if (host.includes('swankyboyz')) return 'swankyboyz';
+  if (host.includes('vaughnsterlingtours')) return 'vaughnsterlingtours';
+  if (host.includes('vaughnsterling') && !host.includes('tours')) return 'vaughnsterling';
+  // Default for localhost/development
+  return 'vaughnsterling';
+};
+
+// Check if we're in production (on a real domain)
+const isProduction = (): boolean => {
+  const host = window.location.hostname.toLowerCase();
+  return host.includes('swankyboyz.com') || 
+         host.includes('vaughnsterlingtours.com') || 
+         host.includes('vaughnsterling.com') ||
+         host.includes('.pages.dev') ||
+         host.includes('.workers.dev');
+};
+
 const AppLayout: React.FC = () => {
-  const [activeSite, setActiveSite] = useState<SiteType>(() => {
-    const host = window.location.hostname;
-    if (host.includes('vaughnsterlingtours')) return 'vaughnsterlingtours';
-    if (host.includes('vaughnsterling')) return 'vaughnsterling';
-    if (host.includes('swankyboyz')) return 'swankyboyz';
-    return 'vaughnsterling'; // Default
-  });
+  const detectedSite = detectSite();
+  const inProduction = isProduction();
+  
+  const [activeSite, setActiveSite] = useState<SiteType>(detectedSite);
   const [showSiteSelector, setShowSiteSelector] = useState(false);
 
   const sites = [
@@ -48,15 +65,27 @@ const AppLayout: React.FC = () => {
 
   const currentSite = sites.find(s => s.id === activeSite)!;
 
+  // In production, render the site directly without preview UI
+  if (inProduction) {
+    return (
+      <div className="min-h-screen">
+        {activeSite === 'swankyboyz' && <SwankyBoyz />}
+        {activeSite === 'vaughnsterlingtours' && <VaughnSterlingTours />}
+        {activeSite === 'vaughnsterling' && <VaughnSterling />}
+      </div>
+    );
+  }
+
+  // Development mode: show preview UI with site selector
   return (
     <div className="min-h-screen">
-      {/* Site Selector Bar */}
+      {/* Site Selector Bar - Development Only */}
       <div className="fixed top-0 left-0 right-0 z-[100] bg-slate-900/95 backdrop-blur-sm border-b border-slate-700">
         <div className="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <Globe className="w-5 h-5 text-slate-400" />
-              <span className="text-slate-300 text-sm font-medium hidden sm:inline">Preview:</span>
+              <span className="text-slate-300 text-sm font-medium hidden sm:inline">Dev Preview:</span>
             </div>
             <div className="relative">
               <button
