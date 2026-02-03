@@ -1,5 +1,9 @@
 {
   "mssql.lintingEnabled": false,
+  "mssql.intelliSense.enableIntelliSense": false,
+  "files.associations": {
+    "workers/sql/*.sql": "postgres"
+  },
   "[sql]": {
     "editor.defaultFormatter": null
   }
