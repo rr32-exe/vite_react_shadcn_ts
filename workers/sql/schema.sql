@@ -1,4 +1,4 @@
--- Schema for Worker-backed APIs
+-- Schema for Worker-backed APIs (PostgreSQL / Supabase)
 -- Run these in Supabase SQL editor
 
 -- 1) orders table
