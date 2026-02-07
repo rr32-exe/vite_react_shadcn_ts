@@ -4,7 +4,7 @@ compatibility_date = "2026-01-13"
 workers_dev = false
 
 # Set your Cloudflare account ID here or add it with `wrangler publish --account-id <id>`
- account_id = "0c8043131da0dc9e3071f64210bdc0e0"
+account_id = "0c8043131da0dc9e3071f64210bdc0e0"
 
 # Routes for the 3 sites with subdomains
 routes = [
@@ -13,63 +13,6 @@ routes = [
   { pattern = "vaughnsterling.com/*", zone_name = "vaughnsterling.com" },
   { pattern = "www.vaughnsterling.com/*", zone_name = "vaughnsterling.com" }
 ]
-
-#[build]
-#  command = ""
-
-# NOTE: We recommend using `wrangler secret put` to set the YOCO key and SUPABASE keys.
-# For example:
-#   wrangler secret put YOCO_SECRET_KEY
-#   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-#   wrangler secret put YOCO_WEBHOOK_SECRET
-#   wrangler secret put ADMIN_SECRET
-# You can also add variables in the dashboard or under [vars] below.
-
-[vars]
-# SUPABASE_URL = "https://xyz.supabase.co"  # prefer to set in Cloudflare dashboard or via wrangler env
-# MONITORING_WEBHOOK_URL = "https://hooks.example.com/your-monitor"
-# Optional Sentry DSN for server-side error reporting
-# SENTRY_DSN = "https://<public_key>@sentry.io/<project_id>"
-# Optional client-side Sentry DSN for frontend (VITE_SENTRY_DSN can be set in your build environment)
-# VITE_SENTRY_DSN = "https://<public_key>@sentry.io/<project_id>"
-# Rate limiting config (per-IP)
-# RATE_LIMIT_MAX = "60"          # max requests
-# RATE_LIMIT_WINDOW = "60"       # window seconds
-# Optional OAuth/GitHub settings (register an OAuth App and set the callback to https://<your-host>/api/auth/github/callback)
-# GITHUB_CLIENT_ID = ""
-# GITHUB_CLIENT_SECRET = ""
-# ADMIN_GITHUB_USERS = "ghuser1,ghuser2"
-# ADMIN_GITHUB_ORGS = "org1,org2"  # only allow users in these orgs
-# JWT settings for Admin UI
-# ADMIN_USERNAME = "admin"
-# ADMIN_PASSWORD = "strongpassword"
-# ADMIN_JWT_SECRET = "supersecret"
-# ADMIN_JWT_EXPIRES = "86400"
-# Optional env name for Sentry
-# WORKER_ENV = "production"
-# SENTRY_RELEASE = ""
-# Optional: set YOCO mode
-# YOCO_MODE = "test"  # or "live"
-# Yoco payment gateway (for VaughnSterling)
-# YOCO_API_URL = "https://online.yoco.com"  # or your enterprise endpoint
-name = "services-api"
-main = "worker.ts"
-compatibility_date = "2026-01-13"
-workers_dev = true
-
-# Set your Cloudflare account ID here or add it with `wrangler publish --account-id <id>`
- account_id = "0c8043131da0dc9e3071f64210bdc0e0"
-
-# Routes for the 3 sites with subdomains
-routes = [
-  { pattern = "blog.swankyboyz.com/*", zone_name = "swankyboyz.com" },
-  { pattern = "blog.vaughnsterlingtours.com/*", zone_name = "vaughnsterlingtours.com" },
-  { pattern = "vaughnsterling.com/*", zone_name = "vaughnsterling.com" },
-  { pattern = "www.vaughnsterling.com/*", zone_name = "vaughnsterling.com" }
-]
-
-#[build]
-#  command = ""
 
 # NOTE: We recommend using `wrangler secret put` to set the YOCO key and SUPABASE keys.
 # For example:
@@ -108,15 +51,7 @@ routes = [
 # YOCO_API_URL = "https://online.yoco.com"  # or your enterprise endpoint
 # YOCO_SECRET_KEY = "sk_live_..."
 # YOCO_WEBHOOK_SECRET = "<webhook-secret>"  # used to validate webhooks
- YOCO_MODE = "live"
-
-# KV namespaces (for storing transient OAuth state / allowlist etc.)
-[[kv_namespaces]]
-binding = "OAUTH_KV"
-id = "17a74afcfe4947e1be99dad806c22610"  # create a KV namespace and put the id here or set via wrangler/dashboard
-# YOCO_SECRET_KEY = "sk_live_..."
-# YOCO_WEBHOOK_SECRET = "<webhook-secret>"  # used to validate webhooks
-# YOCO_MODE = "test" # or "live"
+YOCO_MODE = "live"
 
 # KV namespaces (for storing transient OAuth state / allowlist etc.)
 [[kv_namespaces]]

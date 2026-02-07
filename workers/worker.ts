@@ -288,7 +288,34 @@ async function handleStatus(request: Request, env: WorkerEnv): Promise<Response>
   const yocoConfigured = Boolean(env.YOCO_SECRET_KEY && env.YOCO_API_URL);
   const yocoWebhookConfigured = Boolean(env.YOCO_WEBHOOK_SECRET);
   const supabaseConfigured = Boolean(env.SUPABASE_SERVICE_ROLE_KEY && env.SUPABASE_URL);
-  return jsonResponse({ ok: true, yoco: { configured: yocoConfigured, webhookConfigured: yocoWebhookConfigured }, supabase: { configured: supabaseConfigured }, env: { worker_env: env.WORKER_ENV || null } });
+  
+  // Test DB connection if configured
+  let dbTest = null;
+  if (supabaseConfigured) {
+    try {
+      const testResp = await fetch(`${env.SUPABASE_URL}/rest/v1/newsletter_subscribers?select=count&limit=1`, {
+        headers: {
+          apikey: env.SUPABASE_SERVICE_ROLE_KEY!,
+          Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+        }
+      });
+      if (testResp.ok) {
+        dbTest = { connected: true, status: testResp.status };
+      } else {
+        const errText = await testResp.text();
+        dbTest = { connected: false, status: testResp.status, error: errText.substring(0, 200) };
+      }
+    } catch (e) {
+      dbTest = { connected: false, error: String(e).substring(0, 200) };
+    }
+  }
+  
+  return jsonResponse({ 
+    ok: true, 
+    yoco: { configured: yocoConfigured, webhookConfigured: yocoWebhookConfigured }, 
+    supabase: { configured: supabaseConfigured, dbTest }, 
+    env: { worker_env: env.WORKER_ENV || null } 
+  });
 }
 
 /* --- Utility: retry + monitoring --- */

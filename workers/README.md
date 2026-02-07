@@ -22,10 +22,10 @@ Quick overview:
 npm install -g wrangler
 ```
 
-2. Configure `wrangler.toml`:
+1. Configure `wrangler.toml`:
    - Set `account_id` in `wrangler.toml` or pass it to publish.
 
-3. Add secrets and variables:
+1. Add secrets and variables:
 
 ```bash
 # YOCO secret
@@ -42,7 +42,7 @@ wrangler secret put YOCO_WEBHOOK_SECRET
 # wrangler env put --env production SUPABASE_URL "https://xyz.supabase.co"
 ```
 
-4. Publish the Worker (workers.dev):
+1. Publish the Worker (workers.dev):
 
 ```bash
 wrangler publish
@@ -126,7 +126,7 @@ You can also use the interactive installer to set secrets and vars:
 npm run setup:workers
 ```
 
-If you want GitHub OAuth for admin login, register an OAuth app at [https://github.com/settings/developers](https://github.com/settings/developers) and set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` (and optionally `ADMIN_GITHUB_USERS` or `ADMIN_GITHUB_ORGS` to restrict who can log in). The OAuth callback URL must be [https://<your-host>/api/auth/github/callback](https://<your-host>/api/auth/github/callback).
+If you want GitHub OAuth for admin login, register an OAuth app at [https://github.com/settings/developers](https://github.com/settings/developers) and set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` (and optionally `ADMIN_GITHUB_USERS` or `ADMIN_GITHUB_ORGS` to restrict who can log in). The OAuth callback URL must be `https://YOUR_HOST/api/auth/github/callback`.
 
 We now store the OAuth `state` in a KV namespace `OAUTH_KV` to prevent replay; create one with:
 
@@ -149,19 +149,24 @@ Set a monitoring webhook URL in the Cloudflare dashboard as `MONITORING_WEBHOOK_
   - `SENTRY_RELEASE` (optional) — if you provide a release id (e.g., Git SHA), the worker will include it in events.
 - Client-side: set `VITE_SENTRY_DSN` (in your environment) and the frontend will initialize Sentry (using `@sentry/react`). Pass `VITE_SENTRY_RELEASE` to annotate releases.
 
-Notes:
+**Notes:**
+
 - The worker uses a lightweight direct POST to Sentry's store endpoint (no heavy SDK in the Worker runtime).
 - The main deploy workflow will attempt to create a Sentry release if `SENTRY_AUTH_TOKEN` and related secrets are set.
 
 ### CI / Deploy
 
-A GitHub Actions workflow has been added at `.github/workflows/deploy-workers.yml` that publishes the worker on push to `main`. Set these GitHub secrets:
+A GitHub Actions workflow has been added at `.github/workflows/deploy-workers.yml` that publishes the worker on push to `main`.
+
+Set these GitHub secrets:
+
 - `CF_API_TOKEN` — Cloudflare API token with workers write privileges
 - `CLOUDFLARE_ACCOUNT_ID` — your account id
 
 ---
 
-If you want, I can also:
+If you want, I can also do the following:
+
 - Add TypeScript types or unit tests,
 - Add rate-limiting or monitoring (Sentry / Logs),
 - Add automatic secret provisioning (careful with security) or a safer managed deploy.
