@@ -2,15 +2,18 @@
    - POST /api/create-yoco-charge
    - POST /api/contact-submit
    - POST /api/newsletter-subscribe
+   - POST /api/generate-article (Anthropic Claude)
 
    Uses environment variables (set with `wrangler secret put` or via `vars`):
    - YOCO_API_URL (var) and YOCO_SECRET_KEY (secret)
    - SUPABASE_URL (secret or var, e.g., https://xyz.supabase.co)
    - SUPABASE_SERVICE_ROLE_KEY (secret)
+   - ANTHROPIC_API_KEY (secret) - for article generation
 
    Implementation notes:
    - Uses Supabase REST (PostgREST) with the Service Role key to insert/upsert rows.
    - Uses YOCO REST API to initialize charges.
+   - Uses Anthropic Claude API for AI-powered article generation.
 */
 
 const CORS_HEADERS = {
@@ -89,6 +92,7 @@ interface WorkerEnv {
   ADMIN_GITHUB_USERS?: string;
   ADMIN_GITHUB_ORGS?: string;
   OAUTH_KV?: KVNamespace;
+  ANTHROPIC_API_KEY?: string;
 }
 
 // Route to correct React app based on domain
@@ -172,6 +176,10 @@ export default {
 
       if (url.pathname.startsWith('/api/admin') && request.method === 'GET') {
         return handleAdminRequest(request, env);
+      }
+
+      if (url.pathname === '/api/generate-article' && request.method === 'POST') {
+        return handleGenerateArticle(request, env);
       }
 
       return new Response('Not Found', { status: 404 });
@@ -288,6 +296,7 @@ async function handleStatus(request: Request, env: WorkerEnv): Promise<Response>
   const yocoConfigured = Boolean(env.YOCO_SECRET_KEY && env.YOCO_API_URL);
   const yocoWebhookConfigured = Boolean(env.YOCO_WEBHOOK_SECRET);
   const supabaseConfigured = Boolean(env.SUPABASE_SERVICE_ROLE_KEY && env.SUPABASE_URL);
+  const anthropicConfigured = Boolean(env.ANTHROPIC_API_KEY);
   
   // Test DB connection if configured
   let dbTest = null;
@@ -313,7 +322,8 @@ async function handleStatus(request: Request, env: WorkerEnv): Promise<Response>
   return jsonResponse({ 
     ok: true, 
     yoco: { configured: yocoConfigured, webhookConfigured: yocoWebhookConfigured }, 
-    supabase: { configured: supabaseConfigured, dbTest }, 
+    supabase: { configured: supabaseConfigured, dbTest },
+    anthropic: { configured: anthropicConfigured },
     env: { worker_env: env.WORKER_ENV || null } 
   });
 }
@@ -845,6 +855,93 @@ async function handleYocoWebhook(request: Request, env: WorkerEnv): Promise<Resp
 }
 
 // ----------------- End YOCO handlers -----------------
+
+// ----------------- Anthropic Claude Article Generation -----------------
+
+async function handleGenerateArticle(request: Request, env: WorkerEnv): Promise<Response> {
+  const anthropicKey = env.ANTHROPIC_API_KEY;
+  if (!anthropicKey) {
+    return jsonResponse({ error: 'Anthropic API not configured' }, 500);
+  }
+
+  let payload: { topic?: string; style?: string; length?: string; site?: string };
+  try {
+    payload = await request.json();
+  } catch {
+    return jsonResponse({ error: 'Invalid JSON payload' }, 400);
+  }
+
+  const { topic, style = 'informative', length = 'medium', site = 'blog' } = payload;
+  if (!topic) {
+    return jsonResponse({ error: 'Topic is required' }, 400);
+  }
+
+  const lengthGuide = length === 'short' ? '500-800 words' : length === 'long' ? '1500-2000 words' : '800-1200 words';
+  
+  const systemPrompt = `You are an expert content writer. Write engaging, well-structured blog articles. 
+Use markdown formatting with proper headings (##, ###), bullet points, and emphasis where appropriate.
+The article should be ${lengthGuide} and written in a ${style} tone.
+Include a compelling introduction and conclusion.`;
+
+  const userPrompt = `Write a blog article about: ${topic}
+
+Target site/audience: ${site}
+
+Please structure the article with:
+- An engaging title (as # heading)
+- A hook/introduction paragraph
+- Well-organized sections with subheadings
+- Practical insights or actionable takeaways
+- A conclusion`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': anthropicKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        messages: [
+          { role: 'user', content: userPrompt }
+        ],
+        system: systemPrompt
+      })
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error('Anthropic API error:', errorBody);
+      return jsonResponse({ error: 'Failed to generate article', details: errorBody }, 500);
+    }
+
+    const result = await response.json() as {
+      content: Array<{ type: string; text?: string }>;
+      model: string;
+      usage: { input_tokens: number; output_tokens: number };
+    };
+    
+    const articleContent = result.content
+      .filter((block: { type: string }) => block.type === 'text')
+      .map((block: { type: string; text?: string }) => block.text)
+      .join('\n');
+
+    return jsonResponse({
+      success: true,
+      article: articleContent,
+      model: result.model,
+      usage: result.usage
+    });
+  } catch (err: unknown) {
+    console.error('Article generation error:', err);
+    return jsonResponse({ error: String(err) }, 500);
+  }
+}
+
+// ----------------- End Anthropic handlers -----------------
 
 // Legacy gateway-specific webhook handlers were removed; YOCO is the only supported payment provider.
 // Keep handleYocoWebhook as the canonical webhook entrypoint for YOCO events.
