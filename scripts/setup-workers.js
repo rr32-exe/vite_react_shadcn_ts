@@ -70,20 +70,16 @@ async function updateWranglerTomlVars(replacements) {
 }
 
 async function run() {
-  console.log('\nInteractive Installer — Worker + Supabase + Paystack\n');
+  console.log('\nInteractive Installer — Worker + Supabase + YOCO\n');
 
   // Check for wrangler
   try { await runCmd('wrangler', ['--version']); } catch (err) { console.warn('wrangler not found; please install it (npm i -g wrangler) and login with `wrangler login` before running this installer.'); }
 
-  const paystackKey = await rl.question('Paystack Secret Key (PAYSTACK_SECRET_KEY): ');
+  const yocoApiUrl = await rl.question('YOCO API Base URL (YOCO_API_URL, e.g., https://api.yoco.com): ');
+  const yocoKey = await rl.question('YOCO Secret Key (YOCO_SECRET_KEY): ');
+  const yocoWebhookSecret = await rl.question('YOCO Webhook Secret (YOCO_WEBHOOK_SECRET): ');
   const supabaseKey = await rl.question('Supabase Service Role Key (SUPABASE_SERVICE_ROLE_KEY): ');
   const supabaseUrl = await rl.question('Supabase URL (SUPABASE_URL): ');
-  const webhookSecret = await rl.question('Paystack Webhook Secret (PAYSTACK_WEBHOOK_SECRET): ');
-  // PayPal credentials (optional) — used for PayPal POC
-  const paypalClientId = await rl.question('PayPal Client ID (PAYPAL_CLIENT_ID, sandbox): ');
-  const paypalSecret = await rl.question('PayPal Secret (PAYPAL_SECRET, sandbox): ');
-  const paypalWebhookId = await rl.question('PayPal Webhook ID (PAYPAL_WEBHOOK_ID, sandbox): ');
-  const paypalMode = await rl.question('PayPal Mode (sandbox|live, default sandbox): ') || 'sandbox';
   const adminSecret = await rl.question('Admin Secret for admin UI (ADMIN_SECRET): ');
   const sentryDsn = await rl.question('Sentry DSN (optional, press enter to skip): ');
   const monitoringWebhook = await rl.question('Monitoring Webhook URL (optional): ');
@@ -106,13 +102,10 @@ async function run() {
 
   // Set secrets using wrangler
   console.log('\nSetting Wrangler secrets...');
-  if (paystackKey) await setWranglerSecret('PAYSTACK_SECRET_KEY', paystackKey);
+  if (yocoKey) await setWranglerSecret('YOCO_SECRET_KEY', yocoKey);
+  if (yocoApiUrl) await updateWranglerTomlVars({ YOCO_API_URL: yocoApiUrl });
+  if (yocoWebhookSecret) await setWranglerSecret('YOCO_WEBHOOK_SECRET', yocoWebhookSecret);
   if (supabaseKey) await setWranglerSecret('SUPABASE_SERVICE_ROLE_KEY', supabaseKey);
-  if (webhookSecret) await setWranglerSecret('PAYSTACK_WEBHOOK_SECRET', webhookSecret);
-  if (paypalClientId) await setWranglerSecret('PAYPAL_CLIENT_ID', paypalClientId);
-  if (paypalSecret) await setWranglerSecret('PAYPAL_SECRET', paypalSecret);
-  if (paypalWebhookId) await setWranglerSecret('PAYPAL_WEBHOOK_ID', paypalWebhookId);
-  if (paypalMode) await updateWranglerTomlVars({ PAYPAL_MODE: paypalMode });
   if (adminSecret) await setWranglerSecret('ADMIN_SECRET', adminSecret);
 
   // Optionally set SUPABASE_URL as secret or var
@@ -141,9 +134,9 @@ async function run() {
   const setGh = await yesNoPrompt('Do you want to set these as GitHub repo secrets via `gh` CLI? (requires gh authenticated)', false);
   if (setGh) {
     try { await runCmd('gh', ['--version']); } catch (err) { console.warn('gh not found or not authenticated. Skipping GitHub secrets.'); }
-    if (paystackKey) await setGhSecret('PAYSTACK_SECRET_KEY', paystackKey);
+    if (yocoKey) await setGhSecret('YOCO_SECRET_KEY', yocoKey);
     if (supabaseKey) await setGhSecret('SUPABASE_SERVICE_ROLE_KEY', supabaseKey);
-    if (webhookSecret) await setGhSecret('PAYSTACK_WEBHOOK_SECRET', webhookSecret);
+    if (yocoWebhookSecret) await setGhSecret('YOCO_WEBHOOK_SECRET', yocoWebhookSecret);
     if (adminSecret) await setGhSecret('ADMIN_SECRET', adminSecret);
     if (supabaseUrl) await setGhSecret('SUPABASE_URL', supabaseUrl);
     if (sentryDsn) await setGhSecret('SENTRY_DSN', sentryDsn);
@@ -159,6 +152,16 @@ async function run() {
         console.log('SQL executed.');
       } catch (err) {
         console.error('Failed to run SQL automatically. Please run `workers/sql/schema.sql` in Supabase SQL editor manually. Error:', err.message || err);
+      }
+
+      const runApplyWorkflow = await yesNoPrompt('Would you like to also dispatch the GitHub "Apply DB Schema" workflow (requires `gh` CLI and repository secret DATABASE_URL)?', false);
+      if (runApplyWorkflow) {
+        try {
+          await runCmd('gh', ['workflow', 'run', 'apply-schema.yml']);
+          console.log('Dispatched apply-schema workflow. View it in the Actions tab.');
+        } catch (err) {
+          console.error('Failed to dispatch apply-schema workflow via gh. Ensure `gh` is installed and authenticated with repo access.', err.message || err);
+        }
       }
     }
   }

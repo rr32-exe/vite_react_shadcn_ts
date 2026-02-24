@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { products, articles, categories, Product } from '@/data/swankyboyz';
 import { useNewsletter } from '@/hooks/useNewsletter';
 import { Search, Star, ChevronRight, Mail, ExternalLink, Filter, X, ShoppingBag, Clock, TrendingUp, Loader2 } from 'lucide-react';
@@ -9,6 +9,11 @@ const SwankyBoyz: React.FC = () => {
   const [showNewsletter, setShowNewsletter] = useState(false);
   const [email, setEmail] = useState('');
   const { subscribe, loading: newsletterLoading, success: subscribed } = useNewsletter();
+
+  // Set document title
+  useEffect(() => {
+    document.title = 'SwankyBoyz | Premium Men\'s Lifestyle & Deals';
+  }, []);
 
   const filteredProducts = products.filter(product => {
     const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory;

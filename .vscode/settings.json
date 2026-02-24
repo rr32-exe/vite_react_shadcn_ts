@@ -1,0 +1,15 @@
+{
+  "mssql.lintingEnabled": false,
+  "mssql.intelliSense.enableIntelliSense": false,
+  "mssql.ignoredConnections": ["*"],
+  "files.associations": {
+    "*.sql": "postgres",
+    "**/*.sql": "postgres"
+  },
+  "[sql]": {
+    "editor.defaultFormatter": null
+  },
+  "[postgres]": {
+    "editor.defaultFormatter": null
+  }
+}

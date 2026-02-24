@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { destinations, travelArticles, travelGear, journeyMilestones, costComparison } from '@/data/vaughnsterlingtours';
 import { useNewsletter } from '@/hooks/useNewsletter';
 import { MapPin, Calendar, Plane, Clock, ChevronRight, Mail, ExternalLink, Star, CheckCircle, Circle, ArrowRight, Globe, Shield, Loader2 } from 'lucide-react';
@@ -8,6 +8,11 @@ const VaughnSterlingTours: React.FC = () => {
   const [budgetInput, setBudgetInput] = useState(15000);
   const [email, setEmail] = useState('');
   const { subscribe, loading: newsletterLoading, success: subscribed } = useNewsletter();
+
+  // Set document title
+  useEffect(() => {
+    document.title = 'Vaughn Sterling Tours | Digital Nomad Travel & Relocation Guide';
+  }, []);
 
   const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();

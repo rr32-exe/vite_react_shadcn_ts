@@ -3,12 +3,12 @@ import { describe, it, expect } from 'vitest';
 import worker from '../workers/worker';
 
 describe('Worker status smoke', () => {
-  it('reports Paystack and Supabase configuration and mode', async () => {
+  it('reports YOCO and Supabase configuration', async () => {
     const req = new Request('https://example.com/api/status', { method: 'GET' });
     const env = {
-      PAYSTACK_SECRET_KEY: 'sk_test_abc',
-      PAYSTACK_WEBHOOK_SECRET: 'whsec_test_abc',
-      PAYSTACK_MODE: 'test',
+      YOCO_SECRET_KEY: 'sk_test_abc',
+      YOCO_API_URL: 'https://api.yoco.com',
+      YOCO_WEBHOOK_SECRET: 'whsec_test_abc',
       SUPABASE_SERVICE_ROLE_KEY: 'svc_key',
       SUPABASE_URL: 'https://db.example'
     } as any;
@@ -17,10 +17,9 @@ describe('Worker status smoke', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.ok).toBe(true);
-    expect(json.paystack).toBeTruthy();
-    expect(json.paystack.configured).toBe(true);
-    expect(json.paystack.webhookConfigured).toBe(true);
-    expect(json.paystack.mode).toBe('test');
+    expect(json.yoco).toBeTruthy();
+    expect(json.yoco.configured).toBe(true);
+    expect(json.yoco.webhookConfigured).toBe(true);
     expect(json.supabase.configured).toBe(true);
   });
 });
