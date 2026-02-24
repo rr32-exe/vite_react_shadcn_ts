@@ -17,6 +17,11 @@ const VaughnSterling: React.FC = () => {
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [paymentCancelled, setPaymentCancelled] = useState(false);
 
+  // Set document title
+  useEffect(() => {
+    document.title = 'Vaughn Sterling | AI-Powered Niche Sites & Freelance Services';
+  }, []);
+
   // Check URL params for payment status
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -45,7 +50,9 @@ const VaughnSterling: React.FC = () => {
       serviceId: selectedService.id,
       customerName: checkoutForm.name,
       customerEmail: checkoutForm.email,
-      notes: checkoutForm.notes
+      notes: checkoutForm.notes,
+      site: 'vaughnsterling',
+      provider: 'yoco' // use Yoco for VaughnSterling payments
     });
   };
 
@@ -220,7 +227,7 @@ const VaughnSterling: React.FC = () => {
             </p>
             <div className="mt-4 inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-2 rounded-full text-sm">
               <Shield className="w-4 h-4" />
-              Secure payments via PayPal • 50% deposit to start
+              Secure payments via YOCO • 50% deposit to start
             </div>
           </div>
           
@@ -642,7 +649,7 @@ const VaughnSterling: React.FC = () => {
 
                 <div className="mt-4 flex items-center justify-center gap-2 text-sm text-slate-500">
                   <Shield className="w-4 h-4" />
-                  Secure payment powered by PayPal
+                  Secure payment powered by YOCO
                 </div>
               </form>
             </div>

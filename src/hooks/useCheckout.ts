@@ -5,13 +5,13 @@ interface CheckoutData {
   customerName: string;
   customerEmail: string;
   notes?: string;
+  site?: string; // e.g., 'vaughnsterling'
 }
 
 interface CheckoutResponse {
   success: boolean;
   orderId?: string;
-  paypalOrderId?: string;
-  approveUrl?: string;
+  checkoutUrl?: string;
   depositAmount?: number;
   totalAmount?: number;
   currency?: string;
@@ -35,7 +35,10 @@ export const useCheckout = (): UseCheckoutReturn => {
     try {
       const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
       
-      const response = await fetch(`${apiUrl}/api/create-paypal-order`, {
+      // YOCO is the primary payment provider
+      const endpoint = '/api/create-yoco-charge';
+
+      const response = await fetch(`${apiUrl}${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -45,6 +48,7 @@ export const useCheckout = (): UseCheckoutReturn => {
           customerName: data.customerName,
           customerEmail: data.customerEmail,
           notes: data.notes,
+          site: data.site,
           successUrl: `${window.location.origin}/?payment=success`,
           cancelUrl: `${window.location.origin}/?payment=cancelled`
         })
@@ -52,7 +56,7 @@ export const useCheckout = (): UseCheckoutReturn => {
 
       if (!response.ok) {
         const errorData = await response.json();
-        setError(errorData.error || 'Failed to create PayPal order');
+        setError(errorData.error || 'Failed to create payment');
         return null;
       }
 
@@ -63,9 +67,10 @@ export const useCheckout = (): UseCheckoutReturn => {
         return null;
       }
 
-      // Redirect to PayPal approval page
-      if (responseData?.approveUrl) {
-        window.location.href = responseData.approveUrl;
+      // Redirect to YOCO checkout page
+      const checkoutUrl = responseData?.checkoutUrl;
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
       }
 
       return responseData;

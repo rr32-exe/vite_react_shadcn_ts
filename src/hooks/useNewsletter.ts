@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
 
 type Site = 'swankyboyz' | 'vaughnsterlingtours' | 'vaughnsterling';
 
@@ -21,12 +20,20 @@ export const useNewsletter = (): UseNewsletterReturn => {
     setSuccess(false);
 
     try {
-      const { data, error: fnError } = await supabase.functions.invoke('newsletter-subscribe', {
-        body: { email, site, leadMagnet }
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      
+      const response = await fetch(`${apiUrl}/api/newsletter-subscribe`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, site, leadMagnet })
       });
 
-      if (fnError) {
-        setError(fnError.message || 'Failed to subscribe');
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || 'Failed to subscribe');
         return false;
       }
 

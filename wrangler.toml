@@ -3,8 +3,20 @@ main = "workers/worker.ts"
 compatibility_date = "2026-01-15"
 workers_dev = true
 
+# Routes for the 3 sites with subdomains
+routes = [
+  { pattern = "swankyboyz.com/*", zone_name = "swankyboyz.com" },
+  { pattern = "www.swankyboyz.com/*", zone_name = "swankyboyz.com" },
+  { pattern = "blog.swankyboyz.com/*", zone_name = "swankyboyz.com" },
+  { pattern = "vaughnsterlingtours.com/*", zone_name = "vaughnsterlingtours.com" },
+  { pattern = "www.vaughnsterlingtours.com/*", zone_name = "vaughnsterlingtours.com" },
+  { pattern = "blog.vaughnsterlingtours.com/*", zone_name = "vaughnsterlingtours.com" },
+  { pattern = "vaughnsterling.com/*", zone_name = "vaughnsterling.com" },
+  { pattern = "www.vaughnsterling.com/*", zone_name = "vaughnsterling.com" }
+]
+
 # Set your Cloudflare account ID here to avoid interactive prompts in CI:
-# account_id = "<YOUR_ACCOUNT_ID>"
+ account_id = "0c8043131da0dc9e3071f64210bdc0e0"
 
 [build]
   command = "npm run build"
@@ -12,6 +24,15 @@ workers_dev = true
 [assets]
   directory = "./dist"
 
-# This top-level `wrangler.toml` makes `npx wrangler publish` work from the repo root
-# and uploads the `dist/` directory as worker assets (so the static site and worker are published together).
-# If you prefer to publish the Worker only, remove or comment out the `[assets]` block.
+[vars]
+# Required for Yoco integration
+YOCO_API_URL = "https://online.yoco.com"
+YOCO_MODE = "test" # change to "live" when ready
+
+# Required for Supabase/DatabasePad integration
+SUPABASE_URL = "https://awhyajamokxzhmjlzytt.databasepad.com"
+
+# Optional settings
+RATE_LIMIT_MAX = "60"
+RATE_LIMIT_WINDOW = "60"
+WORKER_ENV = "production"

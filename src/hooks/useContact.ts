@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
 
 interface ContactData {
   name: string;
@@ -27,12 +26,20 @@ export const useContact = (): UseContactReturn => {
     setSuccess(false);
 
     try {
-      const { data: responseData, error: fnError } = await supabase.functions.invoke('contact-submit', {
-        body: data
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      
+      const response = await fetch(`${apiUrl}/api/contact-submit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
       });
 
-      if (fnError) {
-        setError(fnError.message || 'Failed to send message');
+      const responseData = await response.json();
+
+      if (!response.ok) {
+        setError(responseData.error || 'Failed to send message');
         return false;
       }
 
